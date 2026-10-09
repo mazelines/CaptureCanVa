@@ -32,6 +32,8 @@ public partial class MainWindow : Window
     private PixelRect _watchedRect;
     private PixelRect? _recordingFrameRect;
     private bool _windowClipped;
+    private GifPreset? _recordingGifPreset;
+    private CancellationTokenSource? _gifConversionCancellation;
 
     public MainWindow()
     {
@@ -99,6 +101,8 @@ public partial class MainWindow : Window
         SystemAudioCheck.IsChecked = _settings.SystemAudio;
         MicCheck.IsChecked = _settings.Microphone;
         HideSelfCheck.IsChecked = _settings.HideFromCapture;
+        CreateGifCheck.IsChecked = _settings.CreateGif;
+        SelectByTag(GifPresetList, (Enum.IsDefined(_settings.GifPreset) ? _settings.GifPreset : GifPreset.Standard).ToString());
         OutputDirText.Text = _settings.OutputDirectory;
 
         (_settings.Mode switch
@@ -124,6 +128,8 @@ public partial class MainWindow : Window
         _settings.SystemAudio = SystemAudioCheck.IsChecked == true;
         _settings.Microphone = MicCheck.IsChecked == true;
         _settings.HideFromCapture = HideSelfCheck.IsChecked == true;
+        _settings.CreateGif = CreateGifCheck.IsChecked == true;
+        _settings.GifPreset = SelectedGifPreset;
         _settings.OutputDirectory = OutputDirText.Text;
         _settings.Save();
     }
@@ -140,6 +146,14 @@ public partial class MainWindow : Window
     private int SelectedFps => int.Parse((string)((ComboBoxItem)FpsList.SelectedItem).Tag);
 
     private VideoQuality SelectedQuality => Enum.Parse<VideoQuality>((string)((ComboBoxItem)QualityList.SelectedItem).Tag);
+
+    private GifPreset SelectedGifPreset => Enum.Parse<GifPreset>((string)((ComboBoxItem)GifPresetList.SelectedItem).Tag);
+
+    private void OnCreateGifChanged(object sender, RoutedEventArgs e)
+    {
+        if (GifPresetList != null)
+            GifPresetList.IsEnabled = CreateGifCheck.IsChecked == true && _session == null && !_busy;
+    }
 
     // ───────────────────────── capture target UI ─────────────────────────
 
@@ -275,6 +289,7 @@ public partial class MainWindow : Window
             return;
 
         SaveSettingsFromControls();
+        _recordingGifPreset = _settings.CreateGif ? _settings.GifPreset : null;
         var options = new RecordingOptions(target, _ffmpegPath!, _settings.OutputDirectory, _settings.Fps, _settings.Quality,
             _encoder, _settings.CaptureCursor, _settings.SystemAudio, _settings.Microphone);
 
@@ -282,6 +297,7 @@ public partial class MainWindow : Window
         RecordButton.IsEnabled = false;
         StatusText.Text = "녹화 준비 중…";
         LastFileLink.Visibility = Visibility.Collapsed;
+        LastGifFileLink.Visibility = Visibility.Collapsed;
         var session = new RecordingSession(options);
         session.Interrupted += message => Dispatcher.InvokeAsync(() => StopRecordingAsync(message));
         try
@@ -337,6 +353,7 @@ public partial class MainWindow : Window
         _frameWindow = null;
         SetRecordingUi(false);
         RecordButton.IsEnabled = false;
+        CreateGifCheck.IsEnabled = GifPresetList.IsEnabled = false;
         StatusText.Text = (reason != null ? reason + "\n" : "") + "파일 저장 중…";
 
         try
@@ -345,6 +362,39 @@ public partial class MainWindow : Window
             StatusText.Text = (reason != null ? reason + "\n" : "") + "저장 완료:";
             LastFileText.Text = path;
             LastFileLink.Visibility = Visibility.Visible;
+            if (_recordingGifPreset is { } preset)
+            {
+                using var cancellation = new CancellationTokenSource();
+                _gifConversionCancellation = cancellation;
+                GifProgressPanel.Visibility = Visibility.Visible;
+                CancelGifButton.IsEnabled = true;
+                var progress = new Progress<string>(stage =>
+                {
+                    if (ReferenceEquals(_gifConversionCancellation, cancellation) && !cancellation.IsCancellationRequested)
+                        StatusText.Text = (reason != null ? reason + "\n" : "") + "MP4 저장 완료. " + stage;
+                });
+                try
+                {
+                    string gifPath = await GifConverter.ConvertAsync(_ffmpegPath!, path, preset, progress, cancellation.Token);
+                    LastGifFileText.Text = gifPath;
+                    LastGifFileLink.Visibility = Visibility.Visible;
+                    double sizeMb = new FileInfo(gifPath).Length / (1024.0 * 1024.0);
+                    StatusText.Text = (reason != null ? reason + "\n" : "") + $"MP4·GIF 저장 완료 (GIF {sizeMb:F1} MB):";
+                }
+                catch (OperationCanceledException)
+                {
+                    StatusText.Text = (reason != null ? reason + "\n" : "") + "MP4 저장 완료. GIF 변환을 취소했습니다.";
+                }
+                catch (Exception ex)
+                {
+                    StatusText.Text = (reason != null ? reason + "\n" : "") + "MP4는 저장되었습니다. " + ex.Message;
+                }
+                finally
+                {
+                    _gifConversionCancellation = null;
+                    GifProgressPanel.Visibility = Visibility.Collapsed;
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -353,7 +403,10 @@ public partial class MainWindow : Window
         finally
         {
             _busy = false;
+            _recordingGifPreset = null;
             RecordButton.IsEnabled = true;
+            CreateGifCheck.IsEnabled = true;
+            GifPresetList.IsEnabled = CreateGifCheck.IsChecked == true;
         }
 
         if (_closeAfterStop)
@@ -408,6 +461,8 @@ public partial class MainWindow : Window
         MonitorList.IsEnabled = WindowPanel.IsEnabled = RegionPanel.IsEnabled = !recording;
         FpsList.IsEnabled = QualityList.IsEnabled = !recording;
         CursorCheck.IsEnabled = SystemAudioCheck.IsEnabled = MicCheck.IsEnabled = !recording;
+        CreateGifCheck.IsEnabled = !recording;
+        GifPresetList.IsEnabled = !recording && CreateGifCheck.IsChecked == true;
         if (recording)
         {
             _timer.Start();
@@ -459,6 +514,16 @@ public partial class MainWindow : Window
     {
         // Select the file in Explorer.
         Process.Start(new ProcessStartInfo("explorer.exe", "/select," + Ffmpeg.Quote(LastFileText.Text)) { UseShellExecute = true });
+    }
+
+    private void OnOpenLastGifFile(object sender, RoutedEventArgs e) =>
+        Process.Start(new ProcessStartInfo("explorer.exe", "/select," + Ffmpeg.Quote(LastGifFileText.Text)) { UseShellExecute = true });
+
+    private void OnCancelGif(object sender, RoutedEventArgs e)
+    {
+        _gifConversionCancellation?.Cancel();
+        CancelGifButton.IsEnabled = false;
+        StatusText.Text = "MP4는 저장되었습니다. GIF 변환 취소 중…";
     }
 
     // ───────────────────────── hotkeys & lifetime ─────────────────────────

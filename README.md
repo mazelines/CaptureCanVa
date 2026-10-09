@@ -3,7 +3,7 @@
 [![CI/CD](https://github.com/mazelines/CaptureCanVa/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mazelines/CaptureCanVa/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/mazelines/CaptureCanVa)](https://github.com/mazelines/CaptureCanVa/releases/latest)
 
-Windows용 화면 녹화 앱입니다. 전체 화면, 특정 창, 지정한 영역을 녹화하고 시스템 소리와 마이크 음성을 함께 MP4 파일로 저장할 수 있습니다.
+Windows용 화면 녹화 앱입니다. 전체 화면, 특정 창, 지정한 영역을 MP4로 녹화하고, 녹화가 끝나면 블로그·보고서에 사용할 GIF도 함께 생성합니다. MP4에는 시스템 소리와 마이크 음성을 포함할 수 있습니다.
 
 ## 주요 기능
 
@@ -13,6 +13,7 @@ Windows용 화면 녹화 앱입니다. 전체 화면, 특정 창, 지정한 영�
 - **인코더 자동 선택**: NVIDIA NVENC → Intel Quick Sync → AMD AMF 순으로 사용 가능 여부를 확인하고, 사용할 수 없으면 소프트웨어 x264 사용
 - **녹화 제어**: 시작·중지, 일시 정지·재개, 전역 단축키
 - **화면 옵션**: 마우스 커서 포함 여부와 CaptureCanva 창 숨기기
+- **GIF 자동 저장**: 녹화 완료 후 같은 이름의 GIF 생성, 용도별 프리셋 선택, 변환 취소
 - **설정 저장**: 녹화 옵션, 저장 폴더, 마지막으로 지정한 영역을 다음 실행에 복원
 
 영상은 H.264로 저장하며, 오디오를 포함하면 AAC로 인코딩합니다.
@@ -46,12 +47,29 @@ CaptureCanva/
    - **전체 화면**: 녹화할 모니터를 선택합니다.
    - **특정 창**: 목록에서 창을 선택합니다. 필요한 경우 **새로고침**을 누릅니다.
    - **영역 지정**: **영역 선택…**을 누르고 한 모니터 안에서 드래그합니다. `Esc` 또는 마우스 오른쪽 버튼으로 선택을 취소할 수 있습니다.
-3. 프레임, 화질, 마우스 커서, 시스템 소리, 마이크 옵션을 설정합니다.
+3. 프레임, 화질, 마우스 커서, 시스템 소리, 마이크 옵션과 GIF 저장 프리셋을 설정합니다.
 4. 저장 폴더를 확인하고 **녹화 시작**을 누릅니다.
 5. 필요하면 **일시정지**와 **계속**을 사용합니다. **녹화 중지**를 누른 뒤 저장이 끝날 때까지 기다립니다.
-6. 저장된 파일 링크 또는 저장 폴더의 **열기** 버튼으로 결과를 확인합니다.
+6. MP4 저장이 끝나면 GIF 변환이 자동으로 진행됩니다. 완료 후 MP4·GIF 파일 링크 또는 저장 폴더의 **열기** 버튼으로 결과를 확인합니다.
 
 기본 저장 위치는 Windows의 **동영상** 폴더 아래 `CaptureCanva`이며, 파일 이름은 `CaptureCanva_yyyyMMdd_HHmmss.mp4` 형식입니다.
+
+### GIF 함께 저장
+
+v0.2.0부터 **녹화 완료 후 GIF 함께 저장**은 기본으로 켜져 있습니다. MP4를 먼저 저장한 뒤, 같은 폴더에 `CaptureCanva_yyyyMMdd_HHmmss.gif`를 생성합니다. MP4만 필요하면 이 옵션을 끄면 됩니다.
+
+`movie2gif`의 2단계 팔레트 변환 방식과 웹용 프리셋을 통합했습니다.
+
+| 프리셋 | 최대 가로 크기 | 프레임 | 용도 |
+| --- | --- | --- | --- |
+| 문서용 | 360px | 10 fps | 보고서·문서 삽입 |
+| 블로그용 (기본) | 480px | 12 fps | 블로그·SNS 업로드 |
+| 고화질 | 640px | 15 fps | 제품 시연·포트폴리오 |
+| 원본 크기 | 녹화 해상도 유지 | 15 fps | 화면 글자·세부 정보 보존 |
+
+화면 비율을 유지하며, 프리셋보다 작은 영상은 확대하지 않습니다. 전체 녹화 구간을 소리 없는 반복 GIF로 변환하므로 길이와 화면 변화에 따라 파일 크기가 달라집니다. 완료 메시지에 GIF 용량을 표시합니다.
+
+변환 중 **GIF 변환 취소**를 누르면 MP4만 남깁니다. GIF 생성에 실패해도 MP4는 보존하며, 다시 녹화할 수 있습니다. GIF 옵션과 프리셋은 다음 실행에도 유지됩니다.
 
 ### 단축키
 
@@ -110,6 +128,8 @@ FFmpeg 준비 스크립트는 고정 버전의 다운로드와 SHA-256 검증을
 | [`src/CaptureCanva/AppSettings.cs`](src/CaptureCanva/AppSettings.cs) | 설정 저장 및 복원 |
 | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Debug·Release 빌드와 태그 기반 릴리스 배포 |
 | [`scripts/Bundle-Ffmpeg.ps1`](scripts/Bundle-Ffmpeg.ps1) | 배포용 FFmpeg 다운로드·검증·패키징 |
+| [`src/CaptureCanva/Recording/GifConverter.cs`](src/CaptureCanva/Recording/GifConverter.cs) | 2단계 GIF 변환과 취소 처리 |
+| [`tests/CaptureCanva.GifChecks/`](tests/CaptureCanva.GifChecks/) | 실제 FFmpeg를 사용하는 GIF 동작 검사 |
 
 C# / WPF / .NET 10을 사용합니다. Windows.Graphics.Capture와 Direct3D 11로 화면을 캡처하고, Vortice로 GPU 처리를 수행하며, NAudio로 오디오를 녹음합니다. GPU 색 변환을 사용할 수 없으면 FFmpeg의 CPU 변환으로 진행합니다.
 
@@ -122,6 +142,7 @@ GitHub Actions는 `main` 브랜치에 대한 push와 pull request에서 Debug·R
 - NuGet 패키지 캐시를 복원하고, 배포용 Windows x64 런타임 패키지까지 준비
 - Debug·Release 빌드 검사
 - FFmpeg 캐시의 SHA-256 검증과 H.264·AAC 인코딩 확인
+- GIF 프리셋, 결과 파일 디코딩, 변환 취소와 MP4 보존 검사
 - 캐시가 없으면 내려받아 저장하고, 있으면 재사용
 
 NuGet 캐시는 .NET SDK 버전과 프로젝트 의존성이 바뀌면 새로 생성됩니다. FFmpeg 캐시는 준비 스크립트가 바뀌면 새로 생성되며, 태그 기반 릴리스에서도 같은 캐시를 사용합니다.

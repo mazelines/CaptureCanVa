@@ -61,6 +61,10 @@ jobs:
         shell: pwsh
         run: ./scripts/Bundle-Ffmpeg.ps1 -OutputDirectory "$env:RUNNER_TEMP/CaptureCanva-daily-check" -CacheDirectory $env:FFMPEG_CACHE_DIRECTORY
 
+      - name: Verify GIF conversion and cancellation
+        shell: pwsh
+        run: dotnet run --project tests/CaptureCanva.GifChecks/CaptureCanva.GifChecks.csproj -c Release --no-build -- "$env:RUNNER_TEMP/CaptureCanva-daily-check/ffmpeg.exe"
+
       - name: Summarize daily cache check
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         shell: pwsh
@@ -78,6 +82,7 @@ jobs:
           - FFmpeg cache: $ffmpegStatus
           - Debug and Release builds: passed
           - FFmpeg SHA-256 and H.264/AAC encoding: passed
+          - GIF presets, decoding, cancellation, and MP4 preservation: passed
           "@ | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
 
       - name: Upload Release build
@@ -145,6 +150,8 @@ jobs:
           Windows 10/11 x64 screen recorder (full screen, window, region). Self-contained: no .NET install needed.
 
           **Ready to use**: extract the ZIP and run ``CaptureCanva.exe``. FFmpeg is included; no installation or PATH setup is needed.
+
+          **MP4 + GIF**: completed recordings also produce a web-ready GIF by default. Choose report/blog/high-quality/original-size presets, or turn GIF output off. Cancelling GIF conversion keeps the saved MP4.
 
           The package includes FFmpeg 9.0.2 (GPLv3), its license, build information, and source links in ``licenses/ffmpeg`` and ``THIRD-PARTY-NOTICES.md``.
           "@

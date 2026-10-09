@@ -18,6 +18,8 @@ public sealed class AppSettings
     public bool SystemAudio { get; set; } = true;
     public bool Microphone { get; set; }
     public bool HideFromCapture { get; set; } = true;
+    public bool CreateGif { get; set; } = true;
+    public GifPreset GifPreset { get; set; } = GifPreset.Standard;
     public string OutputDirectory { get; set; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "CaptureCanva");
 

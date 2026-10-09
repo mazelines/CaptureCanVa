@@ -80,6 +80,17 @@
         <CheckBox x:Name="HideSelfCheck" Margin="0,4,0,0" Content="녹화 영상에 이 프로그램 창 숨기기"
                   Checked="OnHideSelfChanged" Unchecked="OnHideSelfChanged" />
 
+        <!-- GIF output -->
+        <TextBlock Style="{StaticResource SectionLabel}" Text="GIF 저장" />
+        <CheckBox x:Name="CreateGifCheck" Content="녹화 완료 후 GIF 함께 저장"
+                  Checked="OnCreateGifChanged" Unchecked="OnCreateGifChanged" />
+        <ComboBox x:Name="GifPresetList" Margin="0,6,0,0" IsEnabled="False">
+            <ComboBoxItem Content="문서용 · 360px / 10 fps" Tag="Small" />
+            <ComboBoxItem Content="블로그용 · 480px / 12 fps" Tag="Standard" />
+            <ComboBoxItem Content="고화질 · 640px / 15 fps" Tag="HighQuality" />
+            <ComboBoxItem Content="원본 크기 · 15 fps" Tag="OriginalSize" />
+        </ComboBox>
+
         <!-- Output -->
         <TextBlock Style="{StaticResource SectionLabel}" Text="저장 폴더" />
         <Grid>
@@ -110,8 +121,20 @@
 
         <TextBlock x:Name="HotkeyText" Margin="0,8,0,0" FontSize="12" Opacity="0.6" HorizontalAlignment="Right" />
         <TextBlock x:Name="StatusText" Margin="0,10,0,0" TextWrapping="Wrap" />
-        <TextBlock x:Name="LastFileLink" Margin="0,4,0,0" Visibility="Collapsed">
+        <Grid x:Name="GifProgressPanel" Margin="0,6,0,0" Visibility="Collapsed">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <ProgressBar Height="6" VerticalAlignment="Center" IsIndeterminate="True" />
+            <Button x:Name="CancelGifButton" Grid.Column="1" Margin="10,0,0,0"
+                    Content="GIF 변환 취소" Click="OnCancelGif" />
+        </Grid>
+        <TextBlock x:Name="LastFileLink" Margin="0,4,0,0" Visibility="Collapsed" TextWrapping="Wrap">
             <Hyperlink Click="OnOpenLastFile"><Run x:Name="LastFileText" /></Hyperlink>
+        </TextBlock>
+        <TextBlock x:Name="LastGifFileLink" Margin="0,4,0,0" Visibility="Collapsed" TextWrapping="Wrap">
+            <Hyperlink Click="OnOpenLastGifFile"><Run x:Name="LastGifFileText" /></Hyperlink>
         </TextBlock>
     </StackPanel>
 </Window>
