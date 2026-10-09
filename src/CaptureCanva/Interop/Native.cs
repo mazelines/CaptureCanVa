@@ -68,6 +68,9 @@ internal static class Native
     [DllImport("user32.dll")]
     public static extern bool IsIconic(IntPtr hwnd);
 
+    [DllImport("user32.dll")]
+    public static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int GetWindowTextLength(IntPtr hwnd);
 

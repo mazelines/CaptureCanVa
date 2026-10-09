@@ -27,11 +27,17 @@ public partial class MainWindow : Window
     private bool _busy;
     private bool _closeAfterStop;
     private bool _lagWarned;
+    private readonly DispatcherTimer _windowWatch = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    private IntPtr _watchedWindow;
+    private PixelRect _watchedRect;
+    private PixelRect? _recordingFrameRect;
+    private bool _windowClipped;
 
     public MainWindow()
     {
         InitializeComponent();
         _timer.Tick += (_, _) => UpdateTimer();
+        _windowWatch.Tick += OnWindowWatchTick;
         Loaded += OnLoaded;
     }
 
@@ -200,7 +206,19 @@ public partial class MainWindow : Window
                     StatusText.Text = "최소화된 창은 녹화할 수 없습니다. 창을 복원한 뒤 다시 시도하세요.";
                     return null;
                 }
-                return new CaptureTarget(CaptureMode.Window, window.Handle, null, window.Title);
+                // Record the window as a screen region: popups, menus and tooltips that open on
+                // top of it live in the screen, so a region capture keeps them in the video while
+                // a window-texture capture (CreateItemForWindow) would exclude them.
+                if (WindowInfo.ResolveCaptureRegion(window.Handle) is not { } region)
+                {
+                    StatusText.Text = "창이 화면에 표시되지 않아 녹화할 수 없습니다.";
+                    return null;
+                }
+                _watchedWindow = window.Handle;
+                _watchedRect = region.ScreenRect;
+                _recordingFrameRect = region.ScreenRect;
+                _windowClipped = region.Clipped;
+                return new CaptureTarget(CaptureMode.Region, region.Monitor.Handle, region.MonitorRelative, window.Title);
 
             case CaptureMode.Region:
                 if (_region == null)
@@ -215,6 +233,9 @@ public partial class MainWindow : Window
                     StatusText.Text = "모니터 구성이 바뀌었습니다. 영역을 다시 선택하세요.";
                     return null;
                 }
+                _watchedWindow = IntPtr.Zero;
+                _windowClipped = false;
+                _recordingFrameRect = _region.ScreenRect;
                 return new CaptureTarget(CaptureMode.Region, monitor.Handle, _region.MonitorRelative, "영역");
 
             default:
@@ -224,6 +245,9 @@ public partial class MainWindow : Window
                     return null;
                 }
                 var current = MonitorInfo.GetAll().FirstOrDefault(m => m.DeviceName == selected.DeviceName) ?? selected;
+                _watchedWindow = IntPtr.Zero;
+                _windowClipped = false;
+                _recordingFrameRect = null;
                 return new CaptureTarget(CaptureMode.Monitor, current.Handle, null, current.Display);
         }
     }
@@ -282,15 +306,19 @@ public partial class MainWindow : Window
             await StopRecordingAsync(null);
             return;
         }
-        if (target.Mode == CaptureMode.Region && _region != null)
+        if (_recordingFrameRect is { } frameRect)
         {
-            _frameWindow = new RecordingFrameWindow(_region.ScreenRect);
+            _frameWindow = new RecordingFrameWindow(frameRect);
             _frameWindow.Show();
         }
+        if (_watchedWindow != IntPtr.Zero)
+            _windowWatch.Start();
 
         SetRecordingUi(true);
-        StatusText.Text = $"녹화 중 — {target.Description}  ({session.Width} × {session.Height}, {options.Fps} fps)"
-                          + string.Concat(session.Warnings.Select(w => "\n⚠ " + w));
+        string status = $"녹화 중 — {target.Description}  ({session.Width} × {session.Height}, {options.Fps} fps)";
+        if (_windowClipped)
+            status += "\n⚠ 창이 모니터 화면 밖으로 나가 있어 보이는 부분만 녹화됩니다.";
+        StatusText.Text = status + string.Concat(session.Warnings.Select(w => "\n⚠ " + w));
     }
 
     private async Task StopRecordingAsync(string? reason)
@@ -301,6 +329,10 @@ public partial class MainWindow : Window
 
         _busy = true;
         _session = null;
+        _windowWatch.Stop();
+        _watchedWindow = IntPtr.Zero;
+        _windowClipped = false;
+        _recordingFrameRect = null;
         _frameWindow?.Close();
         _frameWindow = null;
         SetRecordingUi(false);
@@ -338,6 +370,33 @@ public partial class MainWindow : Window
             _session.Pause();
         PauseButton.Content = _session.IsPaused ? "계속" : "일시정지";
         UpdateTimer();
+    }
+
+    /// <summary>
+    /// Window mode records a fixed screen region. If the watched window closes, is minimized or
+    /// moves, that region no longer shows the window — stop instead of recording the wrong thing.
+    /// </summary>
+    private void OnWindowWatchTick(object? sender, EventArgs e)
+    {
+        if (_session == null || _watchedWindow == IntPtr.Zero)
+        {
+            _windowWatch.Stop();
+            return;
+        }
+
+        PixelRect? rect = Native.IsWindow(_watchedWindow) && !Native.IsIconic(_watchedWindow)
+            ? WindowInfo.GetScreenRect(_watchedWindow)
+            : null;
+        if (rect == null)
+        {
+            _windowWatch.Stop();
+            _ = StopRecordingAsync("녹화 대상 창이 닫히거나 최소화되어 녹화를 종료합니다.");
+        }
+        else if (rect.Value != _watchedRect)
+        {
+            _windowWatch.Stop();
+            _ = StopRecordingAsync("녹화 대상 창이 이동되어 녹화를 종료합니다. 창을 고정한 뒤 다시 녹화하세요.");
+        }
     }
 
     private void SetRecordingUi(bool recording)

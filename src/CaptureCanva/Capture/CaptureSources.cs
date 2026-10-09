@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using CaptureCanva.Interop;
 
@@ -47,6 +48,54 @@ public sealed record MonitorInfo(IntPtr Handle, string DeviceName, PixelRect Bou
 public sealed record WindowInfo(IntPtr Handle, string Title, string ProcessName)
 {
     public string Display => string.IsNullOrEmpty(ProcessName) ? Title : $"{Title}  —  {ProcessName}";
+
+    /// <summary>Visible screen bounds in physical pixels — DWM extended frame bounds, i.e. without
+    /// the invisible resize border that GetWindowRect includes.</summary>
+    public static PixelRect? GetScreenRect(IntPtr hwnd)
+    {
+        if (Native.DwmGetWindowAttribute(hwnd, Native.DWMWA_EXTENDED_FRAME_BOUNDS, out Native.RECT rect,
+                Marshal.SizeOf<Native.RECT>()) != 0
+            && !Native.GetWindowRect(hwnd, out rect))
+            return null;
+        return new PixelRect(rect.Left, rect.Top, rect.Width, rect.Height);
+    }
+
+    /// <summary>
+    /// Resolves a window into a screen region to record: the monitor showing the largest part of
+    /// the window, with the window rect clipped to that monitor. Recording the region instead of
+    /// the window texture keeps popups, menus and tooltips (separate HWNDs on top) in the video.
+    /// </summary>
+    public static (MonitorInfo Monitor, PixelRect ScreenRect, PixelRect MonitorRelative, bool Clipped)?
+        ResolveCaptureRegion(IntPtr hwnd)
+    {
+        if (GetScreenRect(hwnd) is not { } window)
+            return null;
+
+        MonitorInfo? best = null;
+        long bestArea = -1;
+        foreach (var monitor in MonitorInfo.GetAll())
+        {
+            int left = Math.Max(window.X, monitor.Bounds.X);
+            int top = Math.Max(window.Y, monitor.Bounds.Y);
+            long area = (long)Math.Max(0, Math.Min(window.Right, monitor.Bounds.Right) - left)
+                      * Math.Max(0, Math.Min(window.Bottom, monitor.Bounds.Bottom) - top);
+            if (area > bestArea)
+            {
+                bestArea = area;
+                best = monitor;
+            }
+        }
+        if (best == null || bestArea <= 0)
+            return null;
+
+        int x = Math.Max(window.X, best.Bounds.X);
+        int y = Math.Max(window.Y, best.Bounds.Y);
+        int right = Math.Min(window.Right, best.Bounds.Right);
+        int bottom = Math.Min(window.Bottom, best.Bounds.Bottom);
+        var screen = new PixelRect(x, y, right - x, bottom - y);
+        return (best, screen, screen with { X = screen.X - best.Bounds.X, Y = screen.Y - best.Bounds.Y },
+            screen != window);
+    }
 
     /// <summary>Top-level windows a user would recognise as "an app window" (same idea as Alt+Tab).</summary>
     public static List<WindowInfo> GetCapturable()
