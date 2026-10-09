@@ -323,10 +323,15 @@ public static class Entry
             try { Directory.Delete(fakeDir, recursive: true); } catch { /* best effort */ }
         }
 
+        // Behavioral coverage for the YouTube/OAuth release review. Its failures MUST fail the
+        // process: aggregate the counts so the new-suite result cannot be masked by this counter.
+        YoutubeFlowChecks.Run();
+
+        int totalFail = _fail + YoutubeFlowChecks.FailCount;
         Console.WriteLine("---");
-        Console.WriteLine((_fail == 0 ? "ALL PASS: " : "FAILURES: ") + _pass + " passed, " + _fail +
-            " failed  (offline harness: fake HTTP + GUID Temp dirs, no real Google access, no user files)");
-        return _fail == 0 ? 0 : 1;
+        Console.WriteLine((totalFail == 0 ? "ALL PASS: " : "FAILURES: ") + (_pass + YoutubeFlowChecks.TotalPass) +
+            " passed, " + totalFail + " failed  (offline harness: fake HTTP + GUID Temp dirs, no real Google access, no user files)");
+        return totalFail == 0 ? 0 : 1;
     }
 
     private static byte[] ReadFully(HttpContent content)

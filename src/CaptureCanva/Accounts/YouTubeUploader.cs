@@ -48,6 +48,11 @@ public sealed class YouTubeUploader : GoogleUploader
         };
 
         await EnsureAccessTokenAsync(oauth, cancellation);
+        // The refresh inside EnsureAccessToken may have narrowed the grant (scope field replaced
+        // the stored set). A reduced grant must not look connected nor start an API upload.
+        if (!GoogleOAuthClient.HasScope(Tokens, GoogleOAuthClient.ScopeYouTube))
+            throw new InvalidOperationException(
+                "YouTube 업로드 권한이 더 이상 유효하지 않습니다. 환경설정에서 계정을 다시 연결해 주세요.");
         string metadataJson = JsonSerializer.Serialize(metadata);
 
         // 1) Initiate the resumable session.

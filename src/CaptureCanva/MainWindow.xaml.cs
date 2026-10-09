@@ -668,6 +668,11 @@ public partial class MainWindow : Window
             cancellation.Dispose();
         }
 
+        // A run can fail because the grant was lost mid-flight (token narrowed/removed after the
+        // checkboxes were enabled). Re-evaluate availability now so the UI never keeps offering a
+        // service whose saved token can no longer upload.
+        RefreshUploadUi();
+
         // Completed uploads render as real, openable hyperlinks (P3: a bare string is not a link).
         if (links.Count > 0)
         {

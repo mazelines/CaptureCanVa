@@ -26,6 +26,15 @@ public static class GoogleClientConfig
     /// with the test harness); null in the app.</summary>
     internal static string[]? CandidatePathOverride { get; set; }
 
+    /// <summary>Test-only cache reset: without this, the static _loaded flag makes config-shape
+    /// tests order-dependent (a missing-client run poisons every later assertion).</summary>
+    internal static void ResetForTests()
+    {
+        _loaded = false;
+        _clientId = null;
+        _clientSecret = null;
+    }
+
     private static string? Load()
     {
         if (_loaded)

@@ -112,6 +112,16 @@ public sealed class GoogleOAuthClient : IDisposable
         int expiresIn = json.RootElement.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 3600;
         // Refresh a minute early so requests never start with a token that dies mid-upload.
         tokens.AccessTokenExpiry = DateTime.UtcNow + TimeSpan.FromSeconds(Math.Max(60, expiresIn - 60));
+        // Track the grant state exactly as Google reports it at refresh time:
+        //  - a scope field (Google may NARROW it) replaces the stored set, so HasScope gates
+        //    judge by the current grant, never by what we asked for at authorize time;
+        //  - an ABSENT scope field is not a revocation — preserve the stored grant;
+        //  - a rotated refresh_token replaces the stored one; an absent field keeps it.
+        if (json.RootElement.TryGetProperty("scope", out var scope))
+            tokens.Scopes = (scope.GetString() ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (json.RootElement.TryGetProperty("refresh_token", out var rotated)
+            && !string.IsNullOrEmpty(rotated.GetString()))
+            tokens.RefreshToken = rotated.GetString()!;
     }
 
     /// <summary>Google ID tokens carry the e-mail in the payload; the userinfo endpoint is simpler.</summary>

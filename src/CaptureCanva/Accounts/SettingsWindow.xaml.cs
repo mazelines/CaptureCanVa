@@ -1,4 +1,5 @@
 using System.IO;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Input;
 using CaptureCanva.Interop;
@@ -138,17 +139,7 @@ public partial class SettingsWindow : Window
         {
             using var oauth = new GoogleOAuthClient(_clientId, _clientSecret);
             var tokens = await oauth.AuthorizeAsync(scopes, cancellation.Token);
-            // Scope gate: Google may grant a subset (prompt=consent re-consent flows). A token
-            // without the needed scope must NEVER be presented or stored as "connected".
-            string required = scopes[0];
-            if (!GoogleOAuthClient.HasScope(tokens, required))
-            {
-                AccountStatusText.Text = $"❌ {ServiceName(service)} 필요 권한이 승인되지 않았습니다. (승인됨: {string.Join(", ", tokens.Scopes)}) 다시 연결해 주세요.";
-                return;
-            }
-            tokens.Email = await oauth.GetEmailAsync(tokens, cancellation.Token);
-            TokenStore.Save(service, tokens);
-            AccountStatusText.Text = $"{ServiceName(service)} 연결 완료: {tokens.Email}";
+            await CompleteConnectionForTestAsync(service, oauth, tokens, cancellation.Token);
         }
         catch (OperationCanceledException)
         {
@@ -172,6 +163,40 @@ public partial class SettingsWindow : Window
             CancelConnectButton.Visibility = Visibility.Collapsed;
             RefreshAccountUi();
         }
+    }
+
+    /// <summary>Connection completion phase: scope gate → optional account label → encrypted
+    /// save → confirmation text. Internal so UI checks can exercise the real phase without
+    /// launching the browser authorization. Throws OperationCanceledException if the label fetch
+    /// is cancelled (an existing saved token is then left untouched by this method).</summary>
+    internal async Task CompleteConnectionForTestAsync(
+        GoogleService service, GoogleOAuthClient oauth, GoogleTokens tokens, CancellationToken cancellation)
+    {
+        // Scope gate: Google may grant a subset (prompt=consent re-consent flows). A token
+        // without the needed scope must NEVER be presented or stored as "connected".
+        string required = service == GoogleService.YouTube
+            ? GoogleOAuthClient.ScopeYouTube : GoogleOAuthClient.ScopeDrive;
+        if (!GoogleOAuthClient.HasScope(tokens, required))
+        {
+            AccountStatusText.Text = $"❌ {ServiceName(service)} 필요 권한이 승인되지 않았습니다. (승인됨: {string.Join(", ", tokens.Scopes)}) 다시 연결해 주세요.";
+            return;
+        }
+        // The account label is optional: a valid service grant must not be lost because the
+        // userinfo lookup failed. Fall back to a generic label and still persist the token.
+        string labelNote = "";
+        try { tokens.Email = await oauth.GetEmailAsync(tokens, cancellation); }
+        catch (OperationCanceledException) { throw; } // cancellation must propagate
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException)
+        {
+            tokens.Email = "";
+            labelNote = $" (계정 정보(이메일)를 가져오지 못했습니다: {ex.Message})";
+        }
+        TokenStore.Save(service, tokens);
+        // Confirmation: never blank — a generic label stands in when the e-mail is unknown, and
+        // the label-fetch note is preserved instead of being overwritten by "연결 완료".
+        AccountStatusText.Text = string.IsNullOrWhiteSpace(tokens.Email)
+            ? $"{ServiceName(service)} 연결 완료.{labelNote}"
+            : $"{ServiceName(service)} 연결 완료: {tokens.Email}{labelNote}";
     }
 
     private void OnCancelConnect(object sender, RoutedEventArgs e)
