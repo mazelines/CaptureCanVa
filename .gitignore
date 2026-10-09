@@ -5,3 +5,4 @@ obj/
 .claude/
 publish/
 .cache/
+dist/
