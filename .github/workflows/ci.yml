@@ -57,6 +57,12 @@ jobs:
           path: ${{ env.FFMPEG_CACHE_DIRECTORY }}
           key: ${{ runner.os }}-${{ runner.arch }}-ffmpeg-v1-${{ hashFiles('scripts/Bundle-Ffmpeg.ps1') }}
 
+      - name: Verify account and upload flows offline
+        run: dotnet run --project tests/CaptureCanva.UploadChecks/CaptureCanva.UploadChecks.csproj -c Release --no-build
+
+      - name: Verify hidden Drive WPF paths
+        run: dotnet run --project tests/CaptureCanva.UIChecks/CaptureCanva.UIChecks.csproj -c Release --no-build
+
       - name: Verify cached FFmpeg
         shell: pwsh
         run: ./scripts/Bundle-Ffmpeg.ps1 -OutputDirectory "$env:RUNNER_TEMP/CaptureCanva-daily-check" -CacheDirectory $env:FFMPEG_CACHE_DIRECTORY
@@ -83,6 +89,7 @@ jobs:
           - Debug and Release builds: passed
           - FFmpeg SHA-256 and H.264/AAC encoding: passed
           - GIF presets, decoding, cancellation, and MP4 preservation: passed
+          - Offline account, upload, callback, and cancellation checks: passed
           "@ | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
 
       - name: Upload Release build

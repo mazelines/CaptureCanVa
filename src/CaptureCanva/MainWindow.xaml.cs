@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using CaptureCanva.Capture;
+using CaptureCanva.Accounts;
 using CaptureCanva.Interop;
 using CaptureCanva.Recording;
 using CaptureCanva.UI;
@@ -34,6 +35,7 @@ public partial class MainWindow : Window
     private bool _windowClipped;
     private GifPreset? _recordingGifPreset;
     private CancellationTokenSource? _gifConversionCancellation;
+    private CancellationTokenSource? _uploadCancellation;
 
     public MainWindow()
     {
@@ -103,7 +105,13 @@ public partial class MainWindow : Window
         HideSelfCheck.IsChecked = _settings.HideFromCapture;
         CreateGifCheck.IsChecked = _settings.CreateGif;
         SelectByTag(GifPresetList, (Enum.IsDefined(_settings.GifPreset) ? _settings.GifPreset : GifPreset.Standard).ToString());
-        OutputDirText.Text = _settings.OutputDirectory;
+        UploadYouTubeCheck.IsChecked = _settings.UploadYouTube;
+        // Drive is feature-gated off: never restore the stale persisted preference onto the
+        // hidden checkbox, so a saved UploadDrive=true cannot silently activate the hidden path.
+        UploadDriveCheck.IsChecked = _settings.UploadDrive && DriveFeatureGate.Enabled;
+        YouTubePrivateRadio.IsChecked = !_settings.YouTubePublic;
+        RefreshUploadUi();
+
 
         (_settings.Mode switch
         {
@@ -130,6 +138,10 @@ public partial class MainWindow : Window
         _settings.HideFromCapture = HideSelfCheck.IsChecked == true;
         _settings.CreateGif = CreateGifCheck.IsChecked == true;
         _settings.GifPreset = SelectedGifPreset;
+        _settings.UploadYouTube = UploadYouTubeCheck.IsChecked == true;
+        // While Drive is gated off, persist false to heal any stale saved true.
+        _settings.UploadDrive = UploadDriveCheck.IsChecked == true && DriveFeatureGate.Enabled;
+        _settings.YouTubePublic = YouTubePrivateRadio.IsChecked != true;
         _settings.OutputDirectory = OutputDirText.Text;
         _settings.Save();
     }
@@ -395,6 +407,17 @@ public partial class MainWindow : Window
                     GifProgressPanel.Visibility = Visibility.Collapsed;
                 }
             }
+
+            if (!_closeAfterStop && (UploadYouTubeCheck.IsChecked == true
+                || (UploadDriveCheck.IsChecked == true && DriveFeatureGate.Enabled)))
+            {
+                string baseStatus = StatusText.Text;
+                await UploadRecordingAsync(path, baseStatus);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Uploads were cancelled; the local MP4/GIF files are unaffected.
         }
         catch (Exception ex)
         {
@@ -463,6 +486,9 @@ public partial class MainWindow : Window
         CursorCheck.IsEnabled = SystemAudioCheck.IsEnabled = MicCheck.IsEnabled = !recording;
         CreateGifCheck.IsEnabled = !recording;
         GifPresetList.IsEnabled = !recording && CreateGifCheck.IsChecked == true;
+        UploadYouTubeCheck.IsEnabled = UploadPrivacyPanel.IsEnabled = !recording;
+        // Feature gate: the hidden Drive checkbox never becomes interactive.
+        UploadDriveCheck.IsEnabled = !recording && DriveFeatureGate.Enabled;
         if (recording)
         {
             _timer.Start();
@@ -490,6 +516,195 @@ public partial class MainWindow : Window
             _lagWarned = true;
             StatusText.Text += "\n⚠ 인코더가 실시간을 따라가지 못하고 있습니다. 영상이 소리보다 늦어질 수 있으니 프레임(fps)이나 녹화 범위를 줄여 보세요.";
         }
+    }
+
+    // ───────────────────────── accounts & upload ─────────────────────────
+
+    private void OnOpenSettings(object sender, RoutedEventArgs e)
+    {
+        // The settings window sees the CURRENTLY ACTIVE pair (which matches the saved file after
+        // apply, and the effective defaults before the first apply), so display and reality agree.
+        var window = new SettingsWindow(GoogleClientConfig.ClientId, GoogleClientConfig.ClientSecret,
+            _activeRecordHotkey, _activePauseHotkey,
+            tryApply: TryApplyHotkeys,
+            setSuspended: _ => { })
+        { Owner = this };
+        _hotkeysSuspended = true;
+        Native.UnregisterHotKey(Handle, HotkeyRecord);
+        Native.UnregisterHotKey(Handle, HotkeyPause);
+        try { window.ShowDialog(); }
+        finally
+        {
+            _hotkeysSuspended = false;
+            Native.UnregisterHotKey(Handle, HotkeyRecord);
+            Native.UnregisterHotKey(Handle, HotkeyPause);
+            if (!TryRegisterPair(_activeRecordHotkey, _activePauseHotkey)) RegisterHotkeys();
+        }
+        RefreshUploadUi();
+    }
+
+    /// <summary>Upload checkboxes only offer services whose account is actually connected.
+    /// Drive is feature-gated: while hidden, its checkbox and token file are never touched, so
+    /// a locked stale Drive token cannot surface errors in the YouTube-only UI.</summary>
+    private void RefreshUploadUi()
+    {
+        var errors = new List<string>();
+        bool Available(GoogleService service, string scope)
+        {
+            if (GoogleClientConfig.ClientId == null) return false;
+            try { return TokenStore.Load(service) is { } tokens && GoogleOAuthClient.HasScope(tokens, scope); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                errors.Add($"[{service}] 토큰 파일을 읽을 수 없습니다: {ex.Message}");
+                return false;
+            }
+        }
+        bool youtube = Available(GoogleService.YouTube, GoogleOAuthClient.ScopeYouTube);
+        UploadYouTubeCheck.IsEnabled = youtube;
+        if (!youtube) UploadYouTubeCheck.IsChecked = false;
+
+        if (DriveFeatureGate.Enabled)
+        {
+            bool drive = Available(GoogleService.Drive, GoogleOAuthClient.ScopeDrive);
+            UploadDriveCheck.IsEnabled = drive;
+            if (!drive) UploadDriveCheck.IsChecked = false;
+        }
+        else
+        {
+            // Gate off: the checkbox may be Collapsed in XAML but its default IsEnabled is true,
+            // so disable and uncheck it explicitly.
+            UploadDriveCheck.IsEnabled = false;
+            UploadDriveCheck.IsChecked = false;
+        }
+        // Gate off: leave the hidden checkbox exactly as XAML made it (Collapsed, unchecked).
+
+        if (errors.Count > 0) StatusText.Text = string.Join("\n", errors);
+    }
+
+    /// <summary>
+    /// Uploads the finished MP4 to every service the user ticked. Per-service errors are
+    /// reported inline; one failing service never blocks the other.
+    /// </summary>
+    private async Task UploadRecordingAsync(string videoPath, string baseStatus)
+    {
+        string? clientId = GoogleClientConfig.ClientId;
+        if (clientId == null)
+            return;
+
+        var progress = new Progress<string>(stage =>
+        {
+            if (_uploadCancellation is { IsCancellationRequested: false })
+                StatusText.Text = "저장 완료. " + stage;
+        });
+        var cancellation = new CancellationTokenSource();
+        _uploadCancellation = cancellation;
+        CancelUploadButton.IsEnabled = true;
+        var jobs = new List<(string Service, Func<GoogleOAuthClient, Task<UploadResult>> Run)>();
+        if (UploadYouTubeCheck.IsChecked == true)
+        {
+            bool isPublic = YouTubePrivateRadio.IsChecked != true;
+            string title = Path.GetFileNameWithoutExtension(videoPath);
+            jobs.Add(("YouTube", async oauth =>
+            {
+                var tokens = TokenStore.Load(GoogleService.YouTube);
+                if (tokens == null || !GoogleOAuthClient.HasScope(tokens, GoogleOAuthClient.ScopeYouTube))
+                    throw new InvalidOperationException("YouTube 업로드 권한이 없습니다. 환경설정에서 다시 연결해 주세요.");
+                using var uploader = new YouTubeUploader(tokens);
+                return await uploader.UploadAsync(oauth, videoPath, title, "CaptureCanva로 녹화했습니다.",
+                    isPublic, progress, cancellation.Token);
+            }));
+        }
+        // Last-line-of-defense: even a stale checked hidden checkbox cannot create a Drive job
+        // while the feature gate is off (recording must never touch a hidden integration).
+        if (UploadDriveCheck.IsChecked == true && DriveFeatureGate.Enabled)
+        {
+            jobs.Add(("Google Drive", async oauth =>
+            {
+                var tokens = TokenStore.Load(GoogleService.Drive);
+                if (tokens == null || !GoogleOAuthClient.HasScope(tokens, GoogleOAuthClient.ScopeDrive))
+                    throw new InvalidOperationException("Google Drive 업로드 권한이 없습니다. 환경설정에서 다시 연결해 주세요.");
+                using var uploader = new GoogleDriveUploader(tokens);
+                return await uploader.UploadAsync(oauth, videoPath, null, false, progress, cancellation.Token);
+            }));
+        }
+        if (jobs.Count == 0)
+        {
+            _uploadCancellation = null;
+            cancellation.Dispose();
+            return;
+        }
+
+        var lines = new List<string>();
+        var links = new List<(string Service, string Url)>();
+        UploadCancelPanel.Visibility = Visibility.Visible;
+        try
+        {
+            foreach (var (service, run) in jobs)
+            {
+                cancellation.Token.ThrowIfCancellationRequested();
+                try
+                {
+                    using var oauth = new GoogleOAuthClient(clientId, GoogleClientConfig.ClientSecret);
+                    UploadResult result = await run(oauth);
+                    links.Add((service, result.Url));
+                    lines.Add($"[{service}] 업로드 완료 — 아래 링크를 클릭해 열 수 있습니다.");
+                }
+                catch (OperationCanceledException)
+                {
+                    lines.Add($"[{service}] 업로드 취소됨");
+                    break; // user asked to stop; do not start the remaining service
+                }
+                catch (Exception ex)
+                {
+                    lines.Add($"[{service}] 업로드 실패: {ex.Message}");
+                }
+            }
+        }
+        finally
+        {
+            _uploadCancellation = null;
+            UploadCancelPanel.Visibility = Visibility.Collapsed;
+            CancelUploadButton.IsEnabled = true;
+            cancellation.Dispose();
+        }
+
+        // Completed uploads render as real, openable hyperlinks (P3: a bare string is not a link).
+        if (links.Count > 0)
+        {
+            UploadLink2Panel.Visibility = Visibility.Collapsed;
+            UploadLink1Text.Text = links[0].Url;
+            if (links.Count > 1)
+            {
+                UploadLink2Panel.Visibility = Visibility.Visible;
+                UploadLink2Text.Text = links[1].Url;
+            }
+            UploadLinksText.Visibility = Visibility.Visible;
+        }
+        if (lines.Count > 0)
+            StatusText.Text = baseStatus + "\n" + string.Join("\n", lines);
+    }
+
+    private void OnOpenUploadLink(object sender, RoutedEventArgs e)
+    {
+        string? url = ReferenceEquals(sender, UploadLink1) ? UploadLink1Text.Text : UploadLink2Text.Text;
+        if (string.IsNullOrEmpty(url))
+            return;
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
+        {
+            MessageBox.Show(this, "링크를 열 수 없습니다.\n" + url, "CaptureCanva",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+    }
+
+    private void OnCancelUpload(object sender, RoutedEventArgs e)
+    {
+        _uploadCancellation?.Cancel();
+        CancelUploadButton.IsEnabled = false;
+        StatusText.Text = "업로드 취소 중…";
     }
 
     // ───────────────────────── output folder ─────────────────────────
@@ -543,13 +758,29 @@ public partial class MainWindow : Window
 
     private readonly record struct Hotkey(uint Modifiers, uint Vk, string Name);
 
+    private bool _hotkeysSuspended; // true while the settings window captures a new key
+
+    /// <summary>Currently active pair; null = nothing registered for that slot.</summary>
+    private HotkeySetting? _activeRecordHotkey;
+    private HotkeySetting? _activePauseHotkey;
+
+    /// <summary>
+    /// Registers the user's saved pair when present, otherwise the built-in defaults. A saved
+    /// pair that collides with another program falls back to the defaults so the app is never
+    /// left without a start key. "없음" (cleared in settings) persists as no registration.
+    /// </summary>
     private void RegisterHotkeys()
     {
+        Native.UnregisterHotKey(Handle, HotkeyRecord);
+        Native.UnregisterHotKey(Handle, HotkeyPause);
+        _activeRecordHotkey = _activePauseHotkey = null;
+
+        if (HotkeySettings.TryLoad(out var saved) && TryRegisterPair(saved.Record, saved.Pause))
+            return;
+
+        // Saved pair failed (OS conflict) → fall back to the built-in candidate list.
         const uint F9 = 0x78, F10 = 0x79, F12 = 0x7B;
         const uint Ctrl = Native.MOD_CONTROL, Shift = Native.MOD_SHIFT;
-
-        // (record, pause) pairs in order of preference. F12 matches Bandicam; the others are
-        // fallbacks for when another app already owns a key. A pair is used only if both register.
         var candidates = new (Hotkey Record, Hotkey Pause)[]
         {
             (new(0, F12, "F12"), new(Shift, F12, "Shift+F12")),
@@ -557,29 +788,90 @@ public partial class MainWindow : Window
             (new(0, F9, "F9"), new(Ctrl, F9, "Ctrl+F9")),
             (new(Ctrl | Shift, F9, "Ctrl+Shift+F9"), new(Ctrl | Shift, F10, "Ctrl+Shift+F10")),
         };
-
         foreach (var (record, pause) in candidates)
         {
-            if (!Native.RegisterHotKey(Handle, HotkeyRecord, Native.MOD_NOREPEAT | record.Modifiers, record.Vk))
-                continue;
-            if (Native.RegisterHotKey(Handle, HotkeyPause, Native.MOD_NOREPEAT | pause.Modifiers, pause.Vk))
-            {
-                HotkeyText.Text = $"단축키: {record.Name} 녹화 시작/중지  ·  {pause.Name} 일시정지";
+            if (TryRegisterPair(
+                    new HotkeySetting(record.Modifiers, record.Vk, record.Name),
+                    new HotkeySetting(pause.Modifiers, pause.Vk, pause.Name)))
                 return;
-            }
-            Native.UnregisterHotKey(Handle, HotkeyRecord);
         }
-
-        // No complete pair is free: keep at least a start/stop key.
         foreach (var (record, _) in candidates)
         {
-            if (Native.RegisterHotKey(Handle, HotkeyRecord, Native.MOD_NOREPEAT | record.Modifiers, record.Vk))
-            {
-                HotkeyText.Text = $"단축키: {record.Name} 녹화 시작/중지  ·  일시정지 단축키 없음 (다른 프로그램이 사용 중)";
+            if (TryRegisterPair(new HotkeySetting(record.Modifiers, record.Vk, record.Name), null))
                 return;
-            }
         }
         HotkeyText.Text = "단축키 등록 실패 (다른 프로그램이 사용 중)";
+    }
+
+    /// <summary>Registers record+pause atomically; rolls the first back when the second fails.</summary>
+    private bool TryRegisterPair(HotkeySetting? record, HotkeySetting? pause)
+    {
+        bool recordOk = record is null || Native.RegisterHotKey(Handle, HotkeyRecord,
+            Native.MOD_NOREPEAT | record.Modifiers, record.VirtualKey);
+        if (!recordOk)
+            return false;
+
+        bool pauseOk = pause is null || Native.RegisterHotKey(Handle, HotkeyPause,
+            Native.MOD_NOREPEAT | pause.Modifiers, pause.VirtualKey);
+        if (!pauseOk)
+        {
+            if (record is not null)
+                Native.UnregisterHotKey(Handle, HotkeyRecord);
+            return false;
+        }
+
+        _activeRecordHotkey = record;
+        _activePauseHotkey = pause;
+        HotkeyText.Text = "단축키: " + (record?.Name ?? "없음") + " 녹화 시작/중지  ·  " + (pause?.Name ?? "없음") + " 일시정지";
+        return true;
+    }
+
+    /// <summary>
+    /// Called by the settings window: registers and persists a candidate pair together.
+    /// On failure the previous pair is restored and an error is returned to the dialog.
+    /// </summary>
+    private string? TryApplyHotkeys(HotkeySetting? record, HotkeySetting? pause)
+    {
+        var previousRecord = _activeRecordHotkey;
+        var previousPause = _activePauseHotkey;
+        string? Finish(string? error)
+        {
+            if (_hotkeysSuspended)
+            {
+                Native.UnregisterHotKey(Handle, HotkeyRecord);
+                Native.UnregisterHotKey(Handle, HotkeyPause);
+            }
+            return error;
+        }
+
+        Native.UnregisterHotKey(Handle, HotkeyRecord);
+        Native.UnregisterHotKey(Handle, HotkeyPause);
+        _activeRecordHotkey = _activePauseHotkey = null;
+
+        string? failure = null;
+        if (TryRegisterPair(record, pause))
+        {
+            try
+            {
+                HotkeySettings.Save(new HotkeySettings
+                {
+                    RecordModifiers = record?.Modifiers, RecordVirtualKey = record?.VirtualKey, RecordName = record?.Name,
+                    PauseModifiers = pause?.Modifiers, PauseVirtualKey = pause?.VirtualKey, PauseName = pause?.Name,
+                });
+                return Finish(null);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                failure = "단축키를 저장하지 못했습니다. 기존 단축키를 유지합니다: " + ex.Message;
+                Native.UnregisterHotKey(Handle, HotkeyRecord);
+                Native.UnregisterHotKey(Handle, HotkeyPause);
+            }
+        }
+
+        // Rollback to the previous pair (which was registered and worked before).
+        if (!TryRegisterPair(previousRecord, previousPause))
+            RegisterHotkeys(); // even the rollback hit a conflict: rebuild from defaults
+        return Finish(failure ?? "키 등록에 실패했습니다 (다른 프로그램이 사용 중이거나 조합이 허용되지 않습니다). 기존 단축키를 유지합니다.");
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -587,6 +879,8 @@ public partial class MainWindow : Window
         if (msg == Native.WM_HOTKEY)
         {
             handled = true;
+            if (_hotkeysSuspended)
+                return IntPtr.Zero; // capturing a new key: a stray press must not start a recording
             if (wParam.ToInt32() == HotkeyRecord)
                 _ = ToggleRecordingAsync();
             else if (wParam.ToInt32() == HotkeyPause)
@@ -597,6 +891,7 @@ public partial class MainWindow : Window
 
     protected override async void OnClosing(CancelEventArgs e)
     {
+        _uploadCancellation?.Cancel();
         if (_session != null || _busy)
         {
             // Finish the file first, then close.

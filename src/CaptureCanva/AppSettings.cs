@@ -20,11 +20,20 @@ public sealed class AppSettings
     public bool HideFromCapture { get; set; } = true;
     public bool CreateGif { get; set; } = true;
     public GifPreset GifPreset { get; set; } = GifPreset.Standard;
+    public bool UploadYouTube { get; set; }
+    public bool UploadDrive { get; set; }
+    public bool YouTubePublic { get; set; }
     public string OutputDirectory { get; set; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "CaptureCanva");
 
-    private static string FilePath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CaptureCanva", "settings.json");
+    /// <summary>Test-only storage override (same pattern as HotkeySettings). Null in the app;
+    /// when set, Load/Save touch ONLY the given directory and never the real user profile.</summary>
+    internal static string? DirectoryOverride { get; set; }
+
+    internal static string FilePath => Path.Combine(
+        DirectoryOverride ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CaptureCanva"),
+        "settings.json");
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 

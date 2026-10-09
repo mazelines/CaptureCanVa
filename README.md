@@ -18,6 +18,8 @@ Windows용 화면 녹화 앱입니다. 전체 화면, 특정 창, 지정한 영�
 - **GIF 자동 저장**: 녹화 완료 후 같은 이름의 GIF 생성, 용도별 프리셋 선택, 변환 취소
 - **메이즈라인 홈페이지**: 앱 하단 홍보 배너에서 [메이즈라인](https://www.mazeline.tech/) 홈페이지 열기
 - **설정 저장**: 녹화 옵션, 저장 폴더, 마지막으로 지정한 영역을 다음 실행에 복원
+- **계정 연동·업로드**: 환경설정에서 YouTube 계정을 연결하고, 녹화 완료 후 MP4 업로드·취소·완료 링크 확인
+- **단축키 변경**: 환경설정에서 키 조합 지정·해제, 중복 및 다른 앱과의 충돌 확인
 
 영상은 H.264로 저장하며, 오디오를 포함하면 AAC로 인코딩합니다.
 
@@ -91,6 +93,22 @@ v0.2.0부터 **녹화 완료 후 GIF 함께 저장**은 기본으로 켜져 있�
 
 앱 하단에 표시된 단축키가 실제 등록된 조합입니다. 두 단축키를 함께 등록할 수 없으면 녹화 시작·중지 단축키만 등록할 수 있으며, 등록에 실패한 경우 앱의 버튼으로 제어합니다.
 
+**환경설정 → 단축키**에서 입력 상자를 클릭하고 키 조합을 누른 뒤 **단축키 적용**을 선택합니다. **지우기**로 해제한 키는 다음 실행에도 해제 상태를 유지합니다. 등록이나 저장에 실패하면 기존 설정을 유지하고 오류를 표시합니다.
+
+### 계정 연결과 업로드 (개발 중인 소스)
+
+Google 계정 연결에는 [Google의 데스크톱 앱 OAuth 클라이언트](https://developers.google.com/identity/protocols/oauth2/native-app)가 필요합니다. Google Cloud 프로젝트에서 YouTube Data API v3를 활성화하고 **데스크톱 앱** 유형의 OAuth 클라이언트 JSON을 내려받습니다. 파일 이름을 `google-oauth-client.json`으로 바꿔 실행 파일 폴더 또는 `%APPDATA%\CaptureCanva`에 넣고 앱을 다시 실행합니다. Google이 제공하는 `installed.client_id` 형식과 `client_id`를 바로 넣는 형식을 지원합니다.
+
+1. **환경설정 → 계정 연동**에서 YouTube **연결**을 누르고 기본 브라우저에서 승인합니다.
+2. 메인 화면에서 **YouTube 업로드**를 선택합니다. YouTube는 기본으로 **비공개**입니다.
+3. 녹화가 끝나면 MP4·GIF 저장 후 선택한 서비스로 MP4를 업로드합니다. 전송량·취소 버튼·완료 링크를 표시합니다.
+
+업로드 실패나 취소 시 로컬 MP4·GIF를 보존합니다. 계정 토큰은 Windows 현재 사용자 범위(DPAPI)로 암호화해 저장합니다. OAuth 클라이언트가 없어도 녹화·GIF 기능을 사용할 수 있으며, 연결 버튼은 설정 안내를 표시합니다. 실제 계정 연결·업로드는 OAuth 클라이언트 준비 후 별도로 확인해야 합니다.
+
+#### 개발자 참고: 비활성화된 Google Drive 연동
+
+Google Drive 업로드 구현(`GoogleDriveUploader`, 관련 토큰 처리와 오프라인 검사)은 코드베이스에 유지되지만 `DriveFeatureGate.Enabled = false`(src/CaptureCanva/Accounts/DriveFeatureGate.cs)로 실행 경로가 차단되어 있어 UI에 노출되지 않습니다. 다시 켜려면 세 가지를 모두 변경해야 합니다: (1) `DriveFeatureGate.Enabled = true`, (2) MainWindow.xaml의 `UploadDriveCheck`를 `Visibility="Visible"`, (3) Accounts/SettingsWindow.xaml의 `DriveSection`을 `Visibility="Visible"`. Drive 업로드를 실제로 사용하려면 Google Cloud에서 Drive API도 활성화해야 합니다.
+
 ## 소스에서 빌드
 
 Windows에 [.NET 10 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)와 Git을 설치합니다. 소스에서 실행할 때는 FFmpeg를 별도로 준비합니다. [FFmpeg 다운로드 페이지](https://ffmpeg.org/download.html)에서 Windows 빌드를 내려받아 `ffmpeg.exe`가 들어 있는 폴더를 `PATH`에 추가하거나, 아래 배포 명령으로 FFmpeg가 포함된 패키지를 생성합니다.
@@ -133,6 +151,8 @@ FFmpeg 준비 스크립트는 고정 버전의 다운로드와 SHA-256 검증을
 | [`scripts/Bundle-Ffmpeg.ps1`](scripts/Bundle-Ffmpeg.ps1) | 배포용 FFmpeg 다운로드·검증·패키징 |
 | [`src/CaptureCanva/Recording/GifConverter.cs`](src/CaptureCanva/Recording/GifConverter.cs) | 2단계 GIF 변환과 취소 처리 |
 | [`tests/CaptureCanva.GifChecks/`](tests/CaptureCanva.GifChecks/) | 실제 FFmpeg를 사용하는 GIF 동작 검사 |
+| [`src/CaptureCanva/Accounts/`](src/CaptureCanva/Accounts/) | 계정 연결, 암호화 저장, 업로드와 환경설정 |
+| [`tests/CaptureCanva.UploadChecks/`](tests/CaptureCanva.UploadChecks/) | 외부 계정 없이 업로드·콜백·취소·저장 검사 |
 
 C# / WPF / .NET 10을 사용합니다. Windows.Graphics.Capture와 Direct3D 11로 화면을 캡처하고, Vortice로 GPU 처리를 수행하며, NAudio로 오디오를 녹음합니다. GPU 색 변환을 사용할 수 없으면 FFmpeg의 CPU 변환으로 진행합니다.
 
@@ -146,6 +166,7 @@ GitHub Actions는 `main` 브랜치에 대한 push와 pull request에서 Debug·R
 - Debug·Release 빌드 검사
 - FFmpeg 캐시의 SHA-256 검증과 H.264·AAC 인코딩 확인
 - GIF 프리셋, 결과 파일 디코딩, 변환 취소와 MP4 보존 검사
+- Google 외부 접속 없이 업로드·인증 콜백·취소·저장 경로 격리 검사
 - 캐시가 없으면 내려받아 저장하고, 있으면 재사용
 
 NuGet 캐시는 .NET SDK 버전과 프로젝트 의존성이 바뀌면 새로 생성됩니다. FFmpeg 캐시는 준비 스크립트가 바뀌면 새로 생성되며, 태그 기반 릴리스에서도 같은 캐시를 사용합니다.

@@ -4,5 +4,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CaptureCanva.GifChecks/CaptureCanva.GifChecks.csproj" />
+    <Project Path="tests/CaptureCanva.UploadChecks/CaptureCanva.UploadChecks.csproj" />
+    <Project Path="tests/CaptureCanva.UIChecks/CaptureCanva.UIChecks.csproj" />
   </Folder>
 </Solution>
