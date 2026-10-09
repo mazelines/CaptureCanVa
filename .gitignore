@@ -4,3 +4,4 @@ obj/
 *.user
 .claude/
 publish/
+.cache/

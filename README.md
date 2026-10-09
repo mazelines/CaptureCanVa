@@ -115,6 +115,19 @@ C# / WPF / .NET 10을 사용합니다. Windows.Graphics.Capture와 Direct3D 11�
 
 GitHub Actions는 `main` 브랜치에 대한 push와 pull request에서 Debug·Release 빌드를 확인합니다. `v*` 태그를 push하면 Windows x64 실행 파일과 FFmpeg, 라이선스 안내를 ZIP으로 묶어 GitHub Release에 올립니다.
 
+### 데일리 빌드와 캐시 점검
+
+매일 **새벽 3시(한국 시간, `Asia/Seoul`)**에 기본 브랜치의 최신 코드로 다음 작업을 실행합니다.
+
+- NuGet 패키지 캐시를 복원하고, 배포용 Windows x64 런타임 패키지까지 준비
+- Debug·Release 빌드 검사
+- FFmpeg 캐시의 SHA-256 검증과 H.264·AAC 인코딩 확인
+- 캐시가 없으면 내려받아 저장하고, 있으면 재사용
+
+NuGet 캐시는 .NET SDK 버전과 프로젝트 의존성이 바뀌면 새로 생성됩니다. FFmpeg 캐시는 준비 스크립트가 바뀌면 새로 생성되며, 태그 기반 릴리스에서도 같은 캐시를 사용합니다.
+
+[Actions의 CI/CD 워크플로](https://github.com/mazelines/CaptureCanVa/actions/workflows/ci.yml)에서 **Run workflow**로 같은 점검을 수동 실행할 수 있습니다. 데일리 작업의 결과와 캐시 재사용 여부는 실행 요약에 표시됩니다. 데일리 실행에서는 릴리스를 게시하지 않습니다.
+
 ## 문제 해결
 
 - **`ffmpeg 없음`이 표시될 때**: 릴리스 ZIP을 다시 풀어 `CaptureCanva.exe`와 `ffmpeg.exe`가 같은 폴더에 있는지 확인합니다. 소스 빌드나 v0.1.1 및 이전 버전은 FFmpeg를 별도로 준비해야 합니다.
