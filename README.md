@@ -23,19 +23,21 @@ Windows용 화면 녹화 앱입니다. 전체 화면, 특정 창, 지정한 영�
 
 - Windows 10/11 x64
 - Windows.Graphics.Capture와 Direct3D 11을 지원하는 환경
-- `ffmpeg.exe` (`libx264`와 AAC 인코딩을 지원하는 빌드)
 
-[최신 릴리스](https://github.com/mazelines/CaptureCanVa/releases/latest)의 `CaptureCanva-v<버전>-win-x64.zip`을 내려받아 압축을 풉니다. 릴리스 실행 파일에는 .NET 런타임이 포함되어 있어 .NET을 따로 설치할 필요가 없습니다.
+[최신 릴리스](https://github.com/mazelines/CaptureCanVa/releases/latest)의 `CaptureCanva-v<버전>-win-x64.zip`을 내려받아 압축을 풀고 `CaptureCanva.exe`를 실행합니다.
 
-**FFmpeg는 릴리스에 포함되어 있지 않습니다.** [FFmpeg 다운로드 페이지](https://ffmpeg.org/download.html)의 **Windows EXE Files**에서 Windows 빌드를 내려받은 뒤, `ffmpeg.exe`를 `CaptureCanva.exe`와 같은 폴더에 둡니다.
+**v0.1.2부터 .NET 런타임과 FFmpeg를 함께 제공합니다.** 별도 설치나 `PATH` 설정 없이 바로 사용할 수 있습니다. ZIP의 파일과 폴더를 함께 유지하세요.
 
 ```text
 CaptureCanva/
 ├── CaptureCanva.exe
-└── ffmpeg.exe
+├── ffmpeg.exe
+├── THIRD-PARTY-NOTICES.md
+└── licenses/
+    └── ffmpeg/
 ```
 
-또는 `ffmpeg.exe`가 들어 있는 폴더를 `PATH`에 추가한 뒤 앱을 실행해도 됩니다. 앱은 실행 파일과 같은 폴더의 FFmpeg를 먼저 찾고, 없으면 `PATH`에서 찾습니다.
+앱은 실행 파일과 같은 폴더의 FFmpeg를 먼저 찾습니다. 함께 제공하는 FFmpeg의 라이선스와 소스 정보는 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)와 ZIP의 `licenses/ffmpeg` 폴더에 있습니다.
 
 ## 사용 방법
 
@@ -70,7 +72,7 @@ CaptureCanva/
 
 ## 소스에서 빌드
 
-Windows에 [.NET 10 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)와 Git을 설치합니다. 소스에서 실행할 때도 FFmpeg가 필요합니다. 개발 중에는 `ffmpeg.exe`가 들어 있는 폴더를 `PATH`에 추가하면 편리합니다.
+Windows에 [.NET 10 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)와 Git을 설치합니다. 소스에서 실행할 때는 FFmpeg를 별도로 준비합니다. [FFmpeg 다운로드 페이지](https://ffmpeg.org/download.html)에서 Windows 빌드를 내려받아 `ffmpeg.exe`가 들어 있는 폴더를 `PATH`에 추가하거나, 아래 배포 명령으로 FFmpeg가 포함된 패키지를 생성합니다.
 
 저장소를 복제하고 빌드합니다.
 
@@ -84,15 +86,17 @@ dotnet run --project src/CaptureCanva/CaptureCanva.csproj
 
 ### 배포용 실행 파일 생성
 
-다음 명령으로 .NET 런타임을 포함한 Windows x64 단일 실행 파일을 `publish` 폴더에 생성합니다.
+다음 명령으로 .NET 런타임을 포함한 Windows x64 실행 파일과 FFmpeg를 `publish` 폴더에 생성합니다. PowerShell에서 실행하세요.
 
 ```powershell
 dotnet publish src/CaptureCanva/CaptureCanva.csproj -c Release -r win-x64 --self-contained true `
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
   -p:EnableCompressionInSingleFile=true -p:DebugType=none -o publish
+./scripts/Bundle-Ffmpeg.ps1 -OutputDirectory publish
+Compress-Archive -Path publish/* -DestinationPath CaptureCanva-win-x64.zip
 ```
 
-실행하려면 `publish` 폴더에 `ffmpeg.exe`를 함께 두거나 `PATH`로 제공해야 합니다.
+FFmpeg 준비 스크립트는 고정 버전의 다운로드와 SHA-256 검증을 수행하고, 라이선스 안내를 복사한 뒤 H.264·AAC 인코딩을 확인합니다. 생성된 ZIP을 풀면 별도 설정 없이 실행할 수 있습니다.
 
 ## 프로젝트 구성
 
@@ -105,14 +109,15 @@ dotnet publish src/CaptureCanva/CaptureCanva.csproj -c Release -r win-x64 --self
 | [`src/CaptureCanva/Interop/`](src/CaptureCanva/Interop/) | Win32 및 Windows 캡처 API 연동 |
 | [`src/CaptureCanva/AppSettings.cs`](src/CaptureCanva/AppSettings.cs) | 설정 저장 및 복원 |
 | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Debug·Release 빌드와 태그 기반 릴리스 배포 |
+| [`scripts/Bundle-Ffmpeg.ps1`](scripts/Bundle-Ffmpeg.ps1) | 배포용 FFmpeg 다운로드·검증·패키징 |
 
 C# / WPF / .NET 10을 사용합니다. Windows.Graphics.Capture와 Direct3D 11로 화면을 캡처하고, Vortice로 GPU 처리를 수행하며, NAudio로 오디오를 녹음합니다. GPU 색 변환을 사용할 수 없으면 FFmpeg의 CPU 변환으로 진행합니다.
 
-GitHub Actions는 `main` 브랜치에 대한 push와 pull request에서 Debug·Release 빌드를 확인합니다. `v*` 태그를 push하면 Windows x64 실행 파일을 압축해 GitHub Release에 올립니다.
+GitHub Actions는 `main` 브랜치에 대한 push와 pull request에서 Debug·Release 빌드를 확인합니다. `v*` 태그를 push하면 Windows x64 실행 파일과 FFmpeg, 라이선스 안내를 ZIP으로 묶어 GitHub Release에 올립니다.
 
 ## 문제 해결
 
-- **`ffmpeg 없음`이 표시될 때**: `ffmpeg.exe`를 앱과 같은 폴더에 두거나 `PATH`에 추가한 뒤 앱을 다시 실행합니다.
+- **`ffmpeg 없음`이 표시될 때**: 릴리스 ZIP을 다시 풀어 `CaptureCanva.exe`와 `ffmpeg.exe`가 같은 폴더에 있는지 확인합니다. 소스 빌드나 v0.1.1 및 이전 버전은 FFmpeg를 별도로 준비해야 합니다.
 - **특정 창을 녹화할 수 없을 때**: 최소화된 창을 복원하고 목록을 새로고침한 뒤 다시 선택합니다.
 - **영역 선택 후 모니터 구성을 바꿨을 때**: 녹화할 영역을 다시 선택합니다.
 - **녹화 지연이 발생할 때**: 프레임이나 녹화 영역 크기를 줄이고, 앱에 표시된 인코더를 확인합니다.

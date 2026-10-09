@@ -65,7 +65,16 @@ jobs:
             -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
             -p:EnableCompressionInSingleFile=true -p:DebugType=none `
             -p:Version=$version -o publish
-          Compress-Archive -Path publish/CaptureCanva.exe -DestinationPath "CaptureCanva-${{ github.ref_name }}-win-x64.zip"
+          if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed.' }
+
+      - name: Bundle and verify FFmpeg
+        shell: pwsh
+        run: ./scripts/Bundle-Ffmpeg.ps1 -OutputDirectory publish
+
+      - name: Package portable application
+        shell: pwsh
+        run: |
+          Compress-Archive -Path publish/* -DestinationPath "CaptureCanva-${{ github.ref_name }}-win-x64.zip"
 
       - name: Create release
         shell: pwsh
@@ -77,7 +86,9 @@ jobs:
 
           Windows 10/11 x64 screen recorder (full screen, window, region). Self-contained: no .NET install needed.
 
-          **Requires ffmpeg**: put ``ffmpeg.exe`` next to ``CaptureCanva.exe`` or add it to PATH.
+          **Ready to use**: extract the ZIP and run ``CaptureCanva.exe``. FFmpeg is included; no installation or PATH setup is needed.
+
+          The package includes FFmpeg 9.0.2 (GPLv3), its license, build information, and source links in ``licenses/ffmpeg`` and ``THIRD-PARTY-NOTICES.md``.
           "@
           gh release create '${{ github.ref_name }}' "CaptureCanva-${{ github.ref_name }}-win-x64.zip" `
             --title "CaptureCanva ${{ github.ref_name }}" --notes $notes
