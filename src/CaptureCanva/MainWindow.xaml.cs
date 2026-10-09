@@ -519,6 +519,19 @@ public partial class MainWindow : Window
     private void OnOpenLastGifFile(object sender, RoutedEventArgs e) =>
         Process.Start(new ProcessStartInfo("explorer.exe", "/select," + Ffmpeg.Quote(LastGifFileText.Text)) { UseShellExecute = true });
 
+    private void OnOpenMazelineWebsite(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("https://www.mazeline.tech/") { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
+        {
+            MessageBox.Show(this, "홈페이지를 열 수 없습니다.\n" + ex.Message, "메이즈라인",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+    }
+
     private void OnCancelGif(object sender, RoutedEventArgs e)
     {
         _gifConversionCancellation?.Cancel();

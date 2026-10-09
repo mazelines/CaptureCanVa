@@ -153,6 +153,8 @@ jobs:
 
           **MP4 + GIF**: completed recordings also produce a web-ready GIF by default. Choose report/blog/high-quality/original-size presets, or turn GIF output off. Cancelling GIF conversion keeps the saved MP4.
 
+          **MAZELINE**: the footer banner opens https://www.mazeline.tech/ in your default browser. Recording settings scroll when needed to keep the banner visible on smaller screens.
+
           The package includes FFmpeg 9.0.2 (GPLv3), its license, build information, and source links in ``licenses/ffmpeg`` and ``THIRD-PARTY-NOTICES.md``.
           "@
           gh release create '${{ github.ref_name }}' "CaptureCanva-${{ github.ref_name }}-win-x64.zip" `

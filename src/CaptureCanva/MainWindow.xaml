@@ -3,138 +3,205 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="CaptureCanva"
         Width="520" SizeToContent="Height"
+        MaxHeight="{Binding Source={x:Static SystemParameters.WorkArea}, Path=Height}"
         ResizeMode="CanMinimize"
         WindowStartupLocation="CenterScreen">
-    <StackPanel Margin="20,16,20,20">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                      PanningMode="VerticalOnly">
+            <StackPanel Margin="20,16,20,16">
 
-        <!-- Capture mode -->
-        <TextBlock Style="{StaticResource SectionLabel}" Margin="0,0,0,6" Text="녹화 대상" />
-        <UniformGrid Columns="3" Margin="0,0,-6,0">
-            <RadioButton x:Name="ModeMonitor" Style="{StaticResource ModeButton}" GroupName="Mode" Content="전체 화면" Checked="OnModeChanged" />
-            <RadioButton x:Name="ModeWindow" Style="{StaticResource ModeButton}" GroupName="Mode" Content="특정 창" Checked="OnModeChanged" />
-            <RadioButton x:Name="ModeRegion" Style="{StaticResource ModeButton}" GroupName="Mode" Content="영역 지정" Checked="OnModeChanged" />
-        </UniformGrid>
+                <!-- Capture mode -->
+                <TextBlock Style="{StaticResource SectionLabel}" Margin="0,0,0,6" Text="녹화 대상" />
+                <UniformGrid Columns="3" Margin="0,0,-6,0">
+                    <RadioButton x:Name="ModeMonitor" Style="{StaticResource ModeButton}" GroupName="Mode" Content="전체 화면" Checked="OnModeChanged" />
+                    <RadioButton x:Name="ModeWindow" Style="{StaticResource ModeButton}" GroupName="Mode" Content="특정 창" Checked="OnModeChanged" />
+                    <RadioButton x:Name="ModeRegion" Style="{StaticResource ModeButton}" GroupName="Mode" Content="영역 지정" Checked="OnModeChanged" />
+                </UniformGrid>
 
-        <Grid Margin="0,10,0,0">
-            <!-- Monitor -->
-            <ComboBox x:Name="MonitorList" DisplayMemberPath="Display" />
+                <Grid Margin="0,10,0,0">
+                    <!-- Monitor -->
+                    <ComboBox x:Name="MonitorList" DisplayMemberPath="Display" />
 
-            <!-- Window -->
-            <Grid x:Name="WindowPanel" Visibility="Collapsed">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <ComboBox x:Name="WindowList" DisplayMemberPath="Display" DropDownOpened="OnWindowListOpened" />
-                <Button Grid.Column="1" Margin="6,0,0,0" Content="새로고침" Click="OnRefreshWindows" />
-            </Grid>
+                    <!-- Window -->
+                    <Grid x:Name="WindowPanel" Visibility="Collapsed">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox x:Name="WindowList" DisplayMemberPath="Display" DropDownOpened="OnWindowListOpened" />
+                        <Button Grid.Column="1" Margin="6,0,0,0" Content="새로고침" Click="OnRefreshWindows" />
+                    </Grid>
 
-            <!-- Region -->
-            <Grid x:Name="RegionPanel" Visibility="Collapsed">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock x:Name="RegionText" VerticalAlignment="Center" Text="선택된 영역 없음" />
-                <Button Grid.Column="1" Content="영역 선택…" Click="OnSelectRegion" />
-            </Grid>
-        </Grid>
+                    <!-- Region -->
+                    <Grid x:Name="RegionPanel" Visibility="Collapsed">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="RegionText" VerticalAlignment="Center" Text="선택된 영역 없음" />
+                        <Button Grid.Column="1" Content="영역 선택…" Click="OnSelectRegion" />
+                    </Grid>
+                </Grid>
 
-        <!-- Options -->
-        <TextBlock Style="{StaticResource SectionLabel}" Text="설정" />
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="90" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <Grid.RowDefinitions>
-                <RowDefinition />
-                <RowDefinition />
-                <RowDefinition />
-            </Grid.RowDefinitions>
+                <!-- Options -->
+                <TextBlock Style="{StaticResource SectionLabel}" Text="설정" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                    </Grid.RowDefinitions>
 
-            <TextBlock VerticalAlignment="Center" Text="프레임" />
-            <ComboBox x:Name="FpsList" Grid.Column="1" Margin="0,0,0,6">
-                <ComboBoxItem Content="15 fps" Tag="15" />
-                <ComboBoxItem Content="24 fps" Tag="24" />
-                <ComboBoxItem Content="30 fps" Tag="30" />
-                <ComboBoxItem Content="60 fps" Tag="60" />
-            </ComboBox>
+                    <TextBlock VerticalAlignment="Center" Text="프레임" />
+                    <ComboBox x:Name="FpsList" Grid.Column="1" Margin="0,0,0,6">
+                        <ComboBoxItem Content="15 fps" Tag="15" />
+                        <ComboBoxItem Content="24 fps" Tag="24" />
+                        <ComboBoxItem Content="30 fps" Tag="30" />
+                        <ComboBoxItem Content="60 fps" Tag="60" />
+                    </ComboBox>
 
-            <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="화질" />
-            <ComboBox x:Name="QualityList" Grid.Row="1" Grid.Column="1" Margin="0,0,0,6">
-                <ComboBoxItem Content="높음" Tag="High" />
-                <ComboBoxItem Content="보통" Tag="Normal" />
-                <ComboBoxItem Content="낮음 (작은 파일)" Tag="Low" />
-            </ComboBox>
+                    <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="화질" />
+                    <ComboBox x:Name="QualityList" Grid.Row="1" Grid.Column="1" Margin="0,0,0,6">
+                        <ComboBoxItem Content="높음" Tag="High" />
+                        <ComboBoxItem Content="보통" Tag="Normal" />
+                        <ComboBoxItem Content="낮음 (작은 파일)" Tag="Low" />
+                    </ComboBox>
 
-            <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="인코더" />
-            <TextBlock x:Name="EncoderText" Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Text="확인 중…" />
-        </Grid>
+                    <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="인코더" />
+                    <TextBlock x:Name="EncoderText" Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Text="확인 중…" />
+                </Grid>
 
-        <WrapPanel Margin="0,10,0,0">
-            <CheckBox x:Name="CursorCheck" Margin="0,0,18,0" Content="마우스 커서" />
-            <CheckBox x:Name="SystemAudioCheck" Margin="0,0,18,0" Content="시스템 소리" />
-            <CheckBox x:Name="MicCheck" Content="마이크" />
-        </WrapPanel>
-        <CheckBox x:Name="HideSelfCheck" Margin="0,4,0,0" Content="녹화 영상에 이 프로그램 창 숨기기"
-                  Checked="OnHideSelfChanged" Unchecked="OnHideSelfChanged" />
+                <WrapPanel Margin="0,10,0,0">
+                    <CheckBox x:Name="CursorCheck" Margin="0,0,18,0" Content="마우스 커서" />
+                    <CheckBox x:Name="SystemAudioCheck" Margin="0,0,18,0" Content="시스템 소리" />
+                    <CheckBox x:Name="MicCheck" Content="마이크" />
+                </WrapPanel>
+                <CheckBox x:Name="HideSelfCheck" Margin="0,4,0,0" Content="녹화 영상에 이 프로그램 창 숨기기"
+                          Checked="OnHideSelfChanged" Unchecked="OnHideSelfChanged" />
 
-        <!-- GIF output -->
-        <TextBlock Style="{StaticResource SectionLabel}" Text="GIF 저장" />
-        <CheckBox x:Name="CreateGifCheck" Content="녹화 완료 후 GIF 함께 저장"
-                  Checked="OnCreateGifChanged" Unchecked="OnCreateGifChanged" />
-        <ComboBox x:Name="GifPresetList" Margin="0,6,0,0" IsEnabled="False">
-            <ComboBoxItem Content="문서용 · 360px / 10 fps" Tag="Small" />
-            <ComboBoxItem Content="블로그용 · 480px / 12 fps" Tag="Standard" />
-            <ComboBoxItem Content="고화질 · 640px / 15 fps" Tag="HighQuality" />
-            <ComboBoxItem Content="원본 크기 · 15 fps" Tag="OriginalSize" />
-        </ComboBox>
+                <!-- GIF output -->
+                <TextBlock Style="{StaticResource SectionLabel}" Text="GIF 저장" />
+                <CheckBox x:Name="CreateGifCheck" Content="녹화 완료 후 GIF 함께 저장"
+                          Checked="OnCreateGifChanged" Unchecked="OnCreateGifChanged" />
+                <ComboBox x:Name="GifPresetList" Margin="0,6,0,0" IsEnabled="False">
+                    <ComboBoxItem Content="문서용 · 360px / 10 fps" Tag="Small" />
+                    <ComboBoxItem Content="블로그용 · 480px / 12 fps" Tag="Standard" />
+                    <ComboBoxItem Content="고화질 · 640px / 15 fps" Tag="HighQuality" />
+                    <ComboBoxItem Content="원본 크기 · 15 fps" Tag="OriginalSize" />
+                </ComboBox>
 
-        <!-- Output -->
-        <TextBlock Style="{StaticResource SectionLabel}" Text="저장 폴더" />
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBox x:Name="OutputDirText" IsReadOnly="True" />
-            <Button Grid.Column="1" Margin="6,0,0,0" Content="변경" Click="OnChangeOutputDir" />
-            <Button Grid.Column="2" Margin="6,0,0,0" Content="열기" Click="OnOpenOutputDir" />
-        </Grid>
+                <!-- Output -->
+                <TextBlock Style="{StaticResource SectionLabel}" Text="저장 폴더" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="OutputDirText" IsReadOnly="True" />
+                    <Button Grid.Column="1" Margin="6,0,0,0" Content="변경" Click="OnChangeOutputDir" />
+                    <Button Grid.Column="2" Margin="6,0,0,0" Content="열기" Click="OnOpenOutputDir" />
+                </Grid>
 
-        <!-- Record -->
-        <Grid Margin="0,22,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
-                <Ellipse x:Name="RecDot" Width="12" Height="12" Margin="0,0,8,0" Fill="{StaticResource RecordBrush}" Opacity="0.25" />
-                <TextBlock x:Name="TimerText" FontFamily="Consolas" FontSize="22" Text="00:00:00" />
+                <!-- Record -->
+                <Grid Margin="0,22,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
+                        <Ellipse x:Name="RecDot" Width="12" Height="12" Margin="0,0,8,0" Fill="{StaticResource RecordBrush}" Opacity="0.25" />
+                        <TextBlock x:Name="TimerText" FontFamily="Consolas" FontSize="22" Text="00:00:00" />
+                    </StackPanel>
+                    <Button x:Name="PauseButton" Grid.Column="1" Margin="0,0,8,0" Padding="14,10" Content="일시정지" IsEnabled="False" Click="OnPauseClick" />
+                    <Button x:Name="RecordButton" Grid.Column="2" Style="{StaticResource RecordButton}" Content="● 녹화 시작" IsEnabled="False" Click="OnRecordClick" />
+                </Grid>
+
+                <TextBlock x:Name="HotkeyText" Margin="0,8,0,0" FontSize="12" Opacity="0.6" HorizontalAlignment="Right" />
+                <TextBlock x:Name="StatusText" Margin="0,10,0,0" TextWrapping="Wrap" />
+                <Grid x:Name="GifProgressPanel" Margin="0,6,0,0" Visibility="Collapsed">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ProgressBar Height="6" VerticalAlignment="Center" IsIndeterminate="True" />
+                    <Button x:Name="CancelGifButton" Grid.Column="1" Margin="10,0,0,0"
+                            Content="GIF 변환 취소" Click="OnCancelGif" />
+                </Grid>
+                <TextBlock x:Name="LastFileLink" Margin="0,4,0,0" Visibility="Collapsed" TextWrapping="Wrap">
+                    <Hyperlink Click="OnOpenLastFile"><Run x:Name="LastFileText" /></Hyperlink>
+                </TextBlock>
+                <TextBlock x:Name="LastGifFileLink" Margin="0,4,0,0" Visibility="Collapsed" TextWrapping="Wrap">
+                    <Hyperlink Click="OnOpenLastGifFile"><Run x:Name="LastGifFileText" /></Hyperlink>
+                </TextBlock>
             </StackPanel>
-            <Button x:Name="PauseButton" Grid.Column="1" Margin="0,0,8,0" Padding="14,10" Content="일시정지" IsEnabled="False" Click="OnPauseClick" />
-            <Button x:Name="RecordButton" Grid.Column="2" Style="{StaticResource RecordButton}" Content="● 녹화 시작" IsEnabled="False" Click="OnRecordClick" />
-        </Grid>
+        </ScrollViewer>
 
-        <TextBlock x:Name="HotkeyText" Margin="0,8,0,0" FontSize="12" Opacity="0.6" HorizontalAlignment="Right" />
-        <TextBlock x:Name="StatusText" Margin="0,10,0,0" TextWrapping="Wrap" />
-        <Grid x:Name="GifProgressPanel" Margin="0,6,0,0" Visibility="Collapsed">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <ProgressBar Height="6" VerticalAlignment="Center" IsIndeterminate="True" />
-            <Button x:Name="CancelGifButton" Grid.Column="1" Margin="10,0,0,0"
-                    Content="GIF 변환 취소" Click="OnCancelGif" />
-        </Grid>
-        <TextBlock x:Name="LastFileLink" Margin="0,4,0,0" Visibility="Collapsed" TextWrapping="Wrap">
-            <Hyperlink Click="OnOpenLastFile"><Run x:Name="LastFileText" /></Hyperlink>
-        </TextBlock>
-        <TextBlock x:Name="LastGifFileLink" Margin="0,4,0,0" Visibility="Collapsed" TextWrapping="Wrap">
-            <Hyperlink Click="OnOpenLastGifFile"><Run x:Name="LastGifFileText" /></Hyperlink>
-        </TextBlock>
-    </StackPanel>
+        <!-- The whole banner opens the company website in the default browser. -->
+        <Button x:Name="MazelineBanner" Grid.Row="1" Margin="20,0,20,16"
+                Click="OnOpenMazelineWebsite" Cursor="Hand" Foreground="#FAFAFA"
+                HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" FocusVisualStyle="{x:Null}"
+                AutomationProperties.Name="메이즈라인 홈페이지 열기"
+                ToolTip="메이즈라인 홈페이지 열기 · https://www.mazeline.tech/">
+            <Button.Template>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="BannerBorder" Background="#101014" BorderBrush="#101014"
+                            BorderThickness="2" CornerRadius="8" Padding="12">
+                        <ContentPresenter />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="BannerBorder" Property="BorderBrush" Value="#8B5CF6" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="BannerBorder" Property="BorderBrush" Value="#C4B5FD" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="BannerBorder" Property="Opacity" Value="0.85" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Button.Template>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <!-- Official seven-bar M symbol, adapted for a dark background. -->
+                <Viewbox Width="40" Height="40" Margin="0,0,12,0" VerticalAlignment="Center">
+                    <Canvas Width="120" Height="120">
+                        <Rectangle Canvas.Left="7" Canvas.Top="24" Width="10" Height="78" Fill="#FAFAFA" />
+                        <Rectangle Canvas.Left="23" Canvas.Top="24" Width="10" Height="78" Fill="#FAFAFA" />
+                        <Rectangle Canvas.Left="39" Canvas.Top="46" Width="10" Height="56" Fill="#FAFAFA" />
+                        <Rectangle Canvas.Left="55" Canvas.Top="68" Width="10" Height="34" Fill="#8B5CF6" />
+                        <Rectangle Canvas.Left="71" Canvas.Top="46" Width="10" Height="56" Fill="#FAFAFA" />
+                        <Rectangle Canvas.Left="87" Canvas.Top="24" Width="10" Height="78" Fill="#FAFAFA" />
+                        <Rectangle Canvas.Left="103" Canvas.Top="24" Width="10" Height="78" Fill="#FAFAFA" />
+                    </Canvas>
+                </Viewbox>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="MAZELINE" FontSize="17" FontWeight="SemiBold" Foreground="#FAFAFA" />
+                    <TextBlock Text="게임과 피지컬 AI" FontSize="12" Foreground="#D4D4D8" Margin="0,3,0,0" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center">
+                    <Border Background="#EDE9FE" CornerRadius="4" Padding="10,6">
+                        <TextBlock Text="홈페이지 ↗" FontSize="12" FontWeight="SemiBold" Foreground="#4C1D95" />
+                    </Border>
+                    <TextBlock Text="mazeline.tech" FontSize="10" Foreground="#D4D4D8"
+                               HorizontalAlignment="Center" Margin="0,4,0,0" />
+                </StackPanel>
+            </Grid>
+        </Button>
+    </Grid>
 </Window>
