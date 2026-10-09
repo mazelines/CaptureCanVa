@@ -3,6 +3,8 @@
 [![CI/CD](https://github.com/mazelines/CaptureCanVa/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mazelines/CaptureCanVa/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/mazelines/CaptureCanVa)](https://github.com/mazelines/CaptureCanVa/releases/latest)
 
+[![CaptureCanva 프로모션 배너 — 필요한 화면만. 소리까지 함께.](docs/assets/capturecanva-promotion-banner.png)](https://github.com/mazelines/CaptureCanVa/releases/latest)
+
 Windows용 화면 녹화 앱입니다. 전체 화면, 특정 창, 지정한 영역을 MP4로 녹화하고, 녹화가 끝나면 블로그·보고서에 사용할 GIF도 함께 생성합니다. MP4에는 시스템 소리와 마이크 음성을 포함할 수 있습니다.
 
 ## 주요 기능
