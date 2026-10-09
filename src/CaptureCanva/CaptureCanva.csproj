@@ -11,7 +11,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <RootNamespace>CaptureCanva</RootNamespace>
     <AssemblyName>CaptureCanva</AssemblyName>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <!-- ThemeMode (Fluent theme) is still flagged experimental. -->
     <NoWarn>$(NoWarn);WPF0001</NoWarn>
     <!-- Work around a .NET 10.0.10 JIT crash (clrjit!CodeGen::genCodeForBBlist, 0xc0000409) seen in the
