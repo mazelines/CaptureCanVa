@@ -1,0 +1,83 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PROJECT: src/CaptureCanva/CaptureCanva.csproj
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build:
+    name: Build (Debug + Release)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore CaptureCanva.slnx
+
+      - name: Build Debug
+        run: dotnet build CaptureCanva.slnx -c Debug --no-restore -warnaserror
+
+      - name: Build Release
+        run: dotnet build CaptureCanva.slnx -c Release --no-restore -warnaserror
+
+      - name: Upload Release build
+        uses: actions/upload-artifact@v4
+        with:
+          name: CaptureCanva-release-build-${{ github.sha }}
+          path: src/CaptureCanva/bin/Release/net10.0-windows10.0.22621.0/
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish self-contained single file
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          dotnet publish $env:PROJECT -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true -p:DebugType=none `
+            -p:Version=$version -o publish
+          Compress-Archive -Path publish/CaptureCanva.exe -DestinationPath "CaptureCanva-${{ github.ref_name }}-win-x64.zip"
+
+      - name: Create release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = @"
+          ## CaptureCanva ${{ github.ref_name }}
+
+          Windows 10/11 x64 screen recorder (full screen, window, region). Self-contained: no .NET install needed.
+
+          **Requires ffmpeg**: put ``ffmpeg.exe`` next to ``CaptureCanva.exe`` or add it to PATH.
+          "@
+          gh release create '${{ github.ref_name }}' "CaptureCanva-${{ github.ref_name }}-win-x64.zip" `
+            --title "CaptureCanva ${{ github.ref_name }}" --notes $notes
