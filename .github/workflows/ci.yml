@@ -90,6 +90,7 @@ jobs:
           - FFmpeg SHA-256 and H.264/AAC encoding: passed
           - GIF presets, decoding, cancellation, and MP4 preservation: passed
           - Offline account, upload, callback, and cancellation checks: passed
+          - Windows UI and dormant Drive checks: passed
           "@ | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
 
       - name: Upload Release build
@@ -160,9 +161,20 @@ jobs:
 
           **MP4 + GIF**: completed recordings also produce a web-ready GIF by default. Choose report/blog/high-quality/original-size presets, or turn GIF output off. Cancelling GIF conversion keeps the saved MP4.
 
+          **Preferences and hotkeys**: configure and save recording/pause shortcuts in Preferences. Conflicting registrations or failed saves restore the previous shortcuts.
+
+          **YouTube upload (experimental)**: connect an account in Preferences, then upload completed MP4 recordings with transferred-byte progress, cancellation and clickable result links. Uploads default to private; local MP4 and GIF files are preserved on failure or cancellation. Google Drive code remains dormant and its UI is hidden.
+
+          **Google setup and verification**: provide a desktop-app OAuth client as ``google-oauth-client.json`` beside the executable or in ``%APPDATA%\CaptureCanva``, and enable YouTube Data API v3 for that project. Client credentials and account tokens are not bundled. Offline HTTP, loopback OAuth callbacks and Windows UI are tested; actual Google login, refresh and upload still require verification with a configured client. Recording and GIF conversion work without Google configuration.
+
           **MAZELINE**: the footer banner opens https://www.mazeline.tech/ in your default browser. Recording settings scroll when needed to keep the banner visible on smaller screens.
 
           The package includes FFmpeg 9.0.2 (GPLv3), its license, build information, and source links in ``licenses/ffmpeg`` and ``THIRD-PARTY-NOTICES.md``.
           "@
+          $notesPath = Join-Path $env:RUNNER_TEMP 'capturecanva-release-notes.md'
+          [IO.File]::WriteAllText($notesPath, $notes, [Text.UTF8Encoding]::new($false))
+          $prereleaseArgs = @()
+          if ('${{ github.ref_name }}'.Contains('-')) { $prereleaseArgs += '--prerelease' }
           gh release create '${{ github.ref_name }}' "CaptureCanva-${{ github.ref_name }}-win-x64.zip" `
-            --title "CaptureCanva ${{ github.ref_name }}" --notes $notes
+            --title "CaptureCanva ${{ github.ref_name }}" --notes-file $notesPath @prereleaseArgs
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub release creation failed.' }
