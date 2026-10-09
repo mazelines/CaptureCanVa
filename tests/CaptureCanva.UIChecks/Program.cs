@@ -134,8 +134,6 @@ internal static class Program
             // The settings dialog must still save a valid YouTube grant when the account-label
             // lookup fails, and report connected with a generic label.
             var dialog2=new SettingsWindow("offline-test-only",null,null,null);
-            var savedBefore=TokenStore.Load(GoogleService.YouTube);
-            string? savedEmailBefore=savedBefore?.Email;
             var badUserinfo=new HttpFake(_ => new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError)
             { Content=new StringContent("userinfo down",System.Text.Encoding.UTF8,"text/plain") });
             using var completionOauth=new GoogleOAuthClient("offline-test-only",handler:badUserinfo);
@@ -156,38 +154,51 @@ internal static class Program
                 && savedAfter.AccessToken=="tk","valid YouTube grant is persisted despite userinfo failure");
             Check(Control<TextBlock>(dialog2,"AccountStatusText").Text.Contains("연결 완료"),"dialog reports connected");
             Check(Control<TextBlock>(dialog2,"AccountStatusText").Text.Contains("가져오지 못했습니다"),"label-fetch failure note is preserved in confirmation text");
-            // Cancellation during the label fetch must propagate and preserve the existing token.
+            // Cancellation during the label fetch must propagate and leave the on-disk token
+            // BYTE-IDENTICAL. Use a DISTINCT unsaved candidate so an accidental overwrite (same
+            // access/refresh/email as the stored grant) could not pass unnoticed.
+            byte[] ciphertextBefore=File.ReadAllBytes(TokenStoreFilePathForTest(GoogleService.YouTube));
+            var candidate=new GoogleTokens
+            {
+                AccessToken="candidate-access-9", RefreshToken="candidate-refresh-9",
+                AccessTokenExpiry=DateTime.UtcNow.AddHours(1),
+                Scopes=[GoogleOAuthClient.ScopeYouTube], Email="candidate@example.com",
+            };
             var cancelCts2=new CancellationTokenSource(); cancelCts2.Cancel();
             var hungOauth=new GoogleOAuthClient("offline-test-only",handler:new HungHandler());
-            try
+            var cancelled=dialog2.Dispatcher.Invoke(new Func<Task>(()=>(Task)Call(dialog2,"CompleteConnectionForTestAsync",GoogleService.YouTube,hungOauth,candidate,cancelCts2.Token)!))!;
+            var cd2=DateTime.UtcNow.AddSeconds(10);
+            while (!cancelled.IsCompleted && DateTime.UtcNow<cd2)
             {
-                var cancelled=dialog2.Dispatcher.Invoke(new Func<Task>(()=>(Task)Call(dialog2,"CompleteConnectionForTestAsync",GoogleService.YouTube,hungOauth,grant,cancelCts2.Token)!))!;
-                var cd2=DateTime.UtcNow.AddSeconds(10);
-                while (!cancelled.IsCompleted && DateTime.UtcNow<cd2)
-                {
-                    System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(
-                        System.Windows.Threading.DispatcherPriority.Background,new Action(delegate { }));
-                    cancelled.Wait(50);
-                }
-                bool propagated=false;
-                try { cancelled.GetAwaiter().GetResult(); }
-                catch (OperationCanceledException) { propagated=true; }
-                var preserved=TokenStore.Load(GoogleService.YouTube);
-                Check(propagated && preserved!=null && preserved.AccessToken=="tk",
-                    "label-fetch cancellation propagates and keeps the previously saved grant");
+                System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(
+                    System.Windows.Threading.DispatcherPriority.Background,new Action(delegate { }));
+                cancelled.Wait(50);
             }
-            catch (TaskCanceledException)
-            {
-                // SetCanceled surfaces as TaskCanceledException (subclass of OCE) — same contract.
-                var preserved=TokenStore.Load(GoogleService.YouTube);
-                Check(preserved!=null && preserved.AccessToken=="tk",
-                    "label-fetch cancellation propagates and keeps the previously saved grant");
-            }
+            // Bound the wait BEFORE awaiting: the loop must never fall into an unbounded GetResult.
+            Check(cancelled.IsCompleted,"cancelled completion finishes within the 10s pump bound");
+            bool propagated=false;
+            try { cancelled.GetAwaiter().GetResult(); }
+            catch (OperationCanceledException) { propagated=true; }
+            Check(propagated,"label-fetch cancellation propagates as OperationCanceledException");
+            byte[] ciphertextAfter=File.ReadAllBytes(TokenStoreFilePathForTest(GoogleService.YouTube));
+            Check(ciphertextAfter.SequenceEqual(ciphertextBefore),"encrypted token bytes are exactly unchanged after cancellation");
+            var preserved=TokenStore.Load(GoogleService.YouTube);
+            Check(preserved!=null && preserved.AccessToken=="tk" && preserved.RefreshToken=="rf"
+                && string.IsNullOrEmpty(preserved.Email),
+                "stored grant keeps its old access/refresh/email (candidate was never saved)");
 
             Console.WriteLine($"Drive hidden checks passed: {passed}. No recording or network.");
             return 0;
         }
         finally{Directory.Delete(isolated,true);}
+    }
+
+    /// <summary>Effective on-disk token file path (respects the GUID Temp DirectoryOverride).</summary>
+    internal static string TokenStoreFilePathForTest(GoogleService service)
+    {
+        var method = typeof(TokenStore).GetMethod("FilePath", BindingFlags.Static | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("TokenStore.FilePath hook missing");
+        return (string)method.Invoke(null, new object[] { service })!;
     }
 }
 

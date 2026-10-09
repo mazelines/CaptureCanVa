@@ -32,7 +32,7 @@ Windows용 화면 녹화 앱입니다. 전체 화면, 특정 창, 지정한 영�
 
 [최신 릴리스](https://github.com/mazelines/CaptureCanVa/releases/latest)의 `CaptureCanva-v<버전>-win-x64.zip`을 내려받아 압축을 풀고 `CaptureCanva.exe`를 실행합니다.
 
-YouTube 업로드와 단축키 설정은 [v0.3.0-rc.1 선행 릴리스](https://github.com/mazelines/CaptureCanVa/releases/tag/v0.3.0-rc.1)에서 먼저 사용할 수 있습니다. 실제 Google 계정 검증이 남아 있어 YouTube 연동은 실험적 기능으로 제공합니다.
+YouTube 업로드와 단축키 설정은 [v0.3.0-rc.2 선행 릴리스](https://github.com/mazelines/CaptureCanVa/releases/tag/v0.3.0-rc.2)에서 먼저 사용할 수 있습니다. 실제 Google 계정 검증이 남아 있어 YouTube 연동은 실험적 기능으로 제공합니다.
 
 **v0.1.2부터 .NET 런타임과 FFmpeg를 함께 제공합니다.** 별도 설치나 `PATH` 설정 없이 바로 사용할 수 있습니다. ZIP의 파일과 폴더를 함께 유지하세요.
 
@@ -97,9 +97,9 @@ v0.2.0부터 **녹화 완료 후 GIF 함께 저장**은 기본으로 켜져 있�
 
 **환경설정 → 단축키**에서 입력 상자를 클릭하고 키 조합을 누른 뒤 **단축키 적용**을 선택합니다. **지우기**로 해제한 키는 다음 실행에도 해제 상태를 유지합니다. 등록이나 저장에 실패하면 기존 설정을 유지하고 오류를 표시합니다.
 
-### YouTube 계정 연결과 업로드 (v0.3.0-rc.1, 실험적)
+### YouTube 계정 연결과 업로드 (v0.3.0-rc.2, 실험적)
 
-v0.3.0-rc.1에 계정 연결과 업로드를 추가했습니다. 모의 HTTP·로컬 인증 콜백·Windows UI 검사를 수행했으며, 실제 Google 계정으로 로그인·갱신·업로드하는 검증은 OAuth 클라이언트 준비 후 진행해야 합니다.
+v0.3.0-rc.2에 계정 연결과 업로드를 추가했습니다. 모의 HTTP·로컬 인증 콜백·Windows UI 검사를 수행했으며, 실제 Google 계정으로 로그인·갱신·업로드하는 검증은 OAuth 클라이언트 준비 후 진행해야 합니다.
 
 Google 계정 연결에는 [Google의 데스크톱 앱 OAuth 클라이언트](https://developers.google.com/identity/protocols/oauth2/native-app)가 필요합니다. Google Cloud 프로젝트에서 YouTube Data API v3를 활성화하고 **데스크톱 앱** 유형의 OAuth 클라이언트 JSON을 내려받습니다. 파일 이름을 `google-oauth-client.json`으로 바꿔 실행 파일 폴더 또는 `%APPDATA%\CaptureCanva`에 넣고 앱을 다시 실행합니다. Google이 제공하는 `installed.client_id` 형식과 `client_id`를 바로 넣는 형식을 지원합니다.
 

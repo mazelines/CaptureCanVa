@@ -27,8 +27,6 @@ internal static class YoutubeFlowChecks
         Console.WriteLine((_fail == 0 ? $"{tag} PASS: " : $"{tag} FAILURES: ") + _pass + " passed, " + _fail + " failed");
     }
 
-    private static string? _configDir;
-
     /// <summary>Resets the GoogleClientConfig static cache and points it at a GUID Temp dir.</summary>
     private static void UseConfigDir(string dir, params string[] files)
     {
