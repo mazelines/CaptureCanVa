@@ -1,221 +1,220 @@
+using System.ComponentModel;
 using System.IO;
-using System.Net.Http;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using CaptureCanva;
-using CaptureCanva.Accounts;
+using CaptureCanva.Capture;
+using CaptureCanva.Preferences;
+using CaptureCanva.Recording;
+
 internal static class Program
 {
-    const BindingFlags Private=BindingFlags.Instance|BindingFlags.NonPublic;
-    static int passed;
-    static void Check(bool ok,string label){if(!ok)throw new Exception(label); passed++; Console.WriteLine("PASS "+label);}
-    static object? Call(object target,string method,params object?[] args)=>target.GetType().GetMethod(method,Private)!.Invoke(target,args);
-    static T Control<T>(FrameworkElement window,string name)=>(T)window.FindName(name);
-    [STAThread] static int Main()
+    private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
+    private static int _passed;
+    [STAThread]
+    private static int Main(string[] args)
     {
-        string isolated=Path.Combine(Path.GetTempPath(),"CaptureCanva-drive-hidden-"+Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(isolated);
-        string config=Path.Combine(isolated,"client.json");
-        File.WriteAllText(config,"{\"client_id\":\"offline-test-only\"}");
-        typeof(TokenStore).GetProperty("DirectoryOverride",BindingFlags.Static|BindingFlags.NonPublic)!.SetValue(null,isolated);
-        typeof(HotkeySettings).GetProperty("DirectoryOverride",BindingFlags.Static|BindingFlags.NonPublic)!.SetValue(null,isolated);
-        typeof(GoogleClientConfig).GetProperty("CandidatePathOverride",BindingFlags.Static|BindingFlags.NonPublic)!.SetValue(null,new[]{config});
-        var storePath=(string)typeof(TokenStore).GetMethod("FilePath",BindingFlags.Static|BindingFlags.NonPublic)!.Invoke(null,new object[]{GoogleService.Drive})!;
-        Check(Path.GetFullPath(storePath).StartsWith(Path.GetFullPath(isolated)+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase),"effective Drive token path is isolated before write");
-        var settingsOverride=typeof(AppSettings).GetProperty("DirectoryOverride",BindingFlags.Static|BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException("AppSettings isolation hook must exist before MainWindow is constructed.");
-        settingsOverride.SetValue(null,isolated);
-        string settingsPath=(string)typeof(AppSettings).GetProperty("FilePath",BindingFlags.Static|BindingFlags.NonPublic)!.GetValue(null)!;
-        Check(Path.GetFullPath(settingsPath).StartsWith(Path.GetFullPath(isolated)+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase),"app settings load path is isolated before UI construction");
-        var app=new CaptureCanva.App(); app.InitializeComponent();
-        var main=new MainWindow(); var dialog=new SettingsWindow("offline-test-only",null,null,null);
-        var settings=(AppSettings)typeof(MainWindow).GetField("_settings",Private)!.GetValue(main)!;
-        settings.UploadDrive=true;
-        settings.Mode=CaptureCanva.Capture.CaptureMode.Monitor;
-        var driveTokens=new GoogleTokens { AccessToken="fake",RefreshToken="fake",Scopes=[GoogleOAuthClient.ScopeDrive],AccessTokenExpiry=DateTime.UtcNow.AddHours(1) };
-        TokenStore.Save(GoogleService.Drive,driveTokens);
-        var bytes=File.ReadAllBytes(storePath);
+        string directory = Path.Combine(Path.GetTempPath(), "CaptureCanva-UIChecks-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        AppSettings.DirectoryOverride = HotkeySettings.DirectoryOverride = directory;
+        App.LogDirectoryOverride = Path.Combine(directory, "logs");
+        // Share the production styles without the production StartupUri or startup hooks.
+        var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown, ThemeMode = ThemeMode.System };
+        app.Resources = new ResourceDictionary { Source = new Uri("/CaptureCanva;component/UI/Styles.xaml", UriKind.Relative) };
+        MainWindow? main = null;
+        SettingsWindow? dialog = null;
         try
         {
-            using(var locked=new FileStream(storePath,FileMode.Open,FileAccess.Read,FileShare.None))
+            File.WriteAllText(AppSettings.FilePath, "{\"OutputDirectory\":\"\",\"UploadYouTube\":true,\"UploadDrive\":true}");
+            HotkeySettings.Save(new HotkeySettings()); // Never register test global shortcuts.
+            main = new MainWindow();
+            Call(main, "ApplySettingsToControls");
+            Check(Control<TextBox>(main, "OutputDirText").Text == AppSettings.DefaultOutputDirectory, "empty folder shows Videos/CaptureCanva");
+            Check(Control<CheckBox>(main, "CreateGifCheck").IsChecked == true, "automatic GIF starts enabled");
+            Check(main.FindName("UploadYouTubeCheck") == null && main.FindName("UploadDriveCheck") == null, "both upload controls are removed");
+            Check(!typeof(MainWindow).Assembly.GetTypes().Any(t => t.Name is "GoogleOAuthClient" or "YouTubeUploader" or "GoogleDriveUploader" or "TokenStore"), "production assembly contains no Google integration");
+            var record = new HotkeySetting(0, 0x7b, "F12");
+            var pause = new HotkeySetting(4, 0x7b, "Shift+F12");
+            int applied = 0;
+            dialog = new SettingsWindow(record, pause, (_, _) => { applied++; return "conflict"; });
+            Check(dialog.FindName("YouTubeConnectButton") == null && dialog.FindName("DriveSection") == null, "preferences contain only local settings");
+            Check(Control<TextBox>(dialog, "RecordHotkeyBox").Text == "F12" && Control<TextBox>(dialog, "PauseHotkeyBox").Text == "Shift+F12", "preferences show active shortcuts");
+            Call(dialog, "OnClearRecordHotkey", dialog, new RoutedEventArgs());
+            Call(dialog, "OnApplyHotkeys", dialog, new RoutedEventArgs());
+            Check(applied == 1 && Control<TextBlock>(dialog, "HotkeyStatusText").Text.Contains("conflict"), "shortcut conflict is shown inline");
+            Check(Control<Button>(dialog, "HotkeyApplyButton").IsEnabled, "failed shortcut change can be retried");
+            var cleared = new SettingsWindow(record, record);
+            Call(cleared, "OnClearPauseHotkey", cleared, new RoutedEventArgs());
+            Call(cleared, "OnApplyHotkeys", cleared, new RoutedEventArgs());
+            Check(cleared.PendingPauseHotkey == null && !Control<Button>(cleared, "HotkeyApplyButton").IsEnabled, "cleared shortcut applies successfully");
+            cleared.Close();
+            Set(main, "_ffmpegPath", "not-used-by-this-check");
+            Set(main, "_busy", true);
+            Call(main, "SetRecordingUi", false);
+            Check(!Control<Button>(main, "RecordButton").IsEnabled && !Control<WrapPanel>(main, "OutputActionsPanel").IsEnabled, "conversion freezes recording and folder/settings actions");
+            Check(!Control<CheckBox>(main, "HideSelfCheck").IsEnabled && !Control<CheckBox>(main, "CreateGifCheck").IsEnabled, "conversion freezes recording options");
+            Set(main, "_busy", false);
+            Call(main, "SetRecordingUi", true);
+            Check(Control<Button>(main, "RecordButton").IsEnabled && !Control<WrapPanel>(main, "OutputActionsPanel").IsEnabled, "active recording permits stop and freezes options");
+            Call(main, "SetRecordingUi", false);
+            Check(Control<WrapPanel>(main, "OutputActionsPanel").IsEnabled, "idle restores settings actions");
+            string blockedFolder = Path.Combine(directory, "this-is-a-file");
+            File.WriteAllText(blockedFolder, "keep me");
+            // Zero HWND cannot be captured. Directory creation must fail before capture starts.
+            Control<ComboBox>(main, "MonitorList").ItemsSource = new List<MonitorInfo> { new(IntPtr.Zero, "synthetic", new PixelRect(0, 0, 128, 72), true, 0) };
+            Control<ComboBox>(main, "MonitorList").SelectedIndex = 0;
+            Control<TextBox>(main, "OutputDirText").Text = blockedFolder;
+            Await((Task)Call(main, "StartRecordingAsync")!);
+            Check(Control<TextBlock>(main, "StatusText").Text.Contains("저장 폴더"), "invalid output folder stays inside the recording error flow");
+            Check(Control<Button>(main, "RecordButton").IsEnabled && Control<WrapPanel>(main, "OutputActionsPanel").IsEnabled, "failed start restores controls");
+            Check(File.ReadAllText(blockedFolder) == "keep me", "invalid folder preserves existing file");
+            Control<TextBox>(main, "OutputDirText").Text = "";
+            Call(main, "SaveSettingsFromControls");
+            Check(AppSettings.Load().OutputDirectory == AppSettings.DefaultOutputDirectory, "empty folder persists the default");
+            Control<Run>(main, "LastFileText").Text = Path.Combine(directory, "missing.mp4");
+            Call(main, "OnOpenLastFile", main, new RoutedEventArgs());
+            Check(Control<TextBlock>(main, "StatusText").Text.Contains("찾을 수 없습니다"), "missing result file gives useful feedback");
+            using (var cancellation = new CancellationTokenSource())
             {
-                Call(main,"ApplySettingsToControls");
-                Check(Control<CheckBox>(main,"UploadDriveCheck").Visibility==Visibility.Collapsed,"Drive upload checkbox stays hidden");
-                Check(Control<CheckBox>(main,"UploadDriveCheck").IsChecked!=true,"old UploadDrive=true does not check hidden UI");
-                Check(!Control<CheckBox>(main,"UploadDriveCheck").IsEnabled,"hidden Drive checkbox is disabled");
-                Check(!Control<TextBlock>(main,"StatusText").Text.Contains("Drive"),"locked dormant token does not create main UI errors");
-                Call(dialog,"RefreshAccountUi");
-                Check(Control<StackPanel>(dialog,"DriveSection").Visibility==Visibility.Collapsed,"Drive account section stays hidden");
-                Check(!Control<TextBlock>(dialog,"DriveStatusText").Text.Contains("파일"),"account refresh skips locked dormant token");
-                Call(main,"SetRecordingUi",true); Call(main,"SetRecordingUi",false);
-                Check(!Control<CheckBox>(main,"UploadDriveCheck").IsEnabled,"recording state transitions do not enable hidden Drive");
-                Control<CheckBox>(main,"UploadYouTubeCheck").IsChecked=false;
-                Control<CheckBox>(main,"UploadDriveCheck").IsChecked=true;
-                Control<TextBlock>(main,"StatusText").Text="local files preserved";
-                var upload=(Task)Call(main,"UploadRecordingAsync",Path.Combine(isolated,"missing.mp4"),"local files preserved")!;
-                upload.GetAwaiter().GetResult();
-                Check(Control<TextBlock>(main,"StatusText").Text=="local files preserved","forced stale Drive selection does not create an upload job");
-                Check(typeof(MainWindow).GetField("_uploadCancellation",Private)!.GetValue(main)==null,"disabled upload leaves no cancellation state");
-                Check(Control<FrameworkElement>(main,"UploadCancelPanel").Visibility==Visibility.Collapsed,"disabled upload leaves no busy panel");
+                Set(main, "_busy", true);
+                Set(main, "_gifConversionCancellation", cancellation);
+                var closing = new CancelEventArgs();
+                Call(main, "OnClosing", closing);
+                Check(closing.Cancel && cancellation.IsCancellationRequested, "close cancels GIF and defers window shutdown");
+                Set(main, "_busy", false);
+                Set(main, "_closeAfterStop", false);
+                Set(main, "_gifConversionCancellation", null);
             }
-            Check(File.ReadAllBytes(storePath).SequenceEqual(bytes),"dormant Drive token bytes are preserved");
-            var youtube=new GoogleTokens { AccessToken="fake",RefreshToken="fake",Scopes=[GoogleOAuthClient.ScopeYouTube],AccessTokenExpiry=DateTime.UtcNow.AddHours(1) };
-            TokenStore.Save(GoogleService.YouTube,youtube);
-            Call(main,"RefreshUploadUi"); Call(dialog,"RefreshAccountUi");
-            Check(Control<CheckBox>(main,"UploadYouTubeCheck").IsEnabled,"YouTube with required scope remains available");
-            Check(Control<TextBlock>(dialog,"YouTubeStatusText").Text.Contains("연결됨"),"YouTube account status remains functional");
-            Check(!Control<CheckBox>(main,"UploadDriveCheck").IsEnabled && Control<CheckBox>(main,"UploadDriveCheck").IsChecked!=true,"YouTube refresh still clears and disables dormant Drive");
-
-            // ---- missing OAuth client UI: no client file anywhere -> setup message ----
-            TokenStore.Delete(GoogleService.YouTube); // simulate signed-out state for this group
-            typeof(GoogleClientConfig).GetProperty("CandidatePathOverride",BindingFlags.Static|BindingFlags.NonPublic)!
-                .SetValue(null,new[]{Path.Combine(isolated,"no-such-client.json")});
-            typeof(GoogleClientConfig).GetMethod("ResetForTests",BindingFlags.Static|BindingFlags.NonPublic)!.Invoke(null,null);
-            var disconnected=new SettingsWindow(null,null,null,null);
-            Call(disconnected,"RefreshAccountUi");
-            Check(Control<TextBlock>(disconnected,"YouTubeStatusText").Text.Contains("연결되지 않음"),"disconnected YouTube panel reports not connected");
-            Call(disconnected,"OnYouTubeConnect",new object?[]{ disconnected, new RoutedEventArgs() });
-            Check(Control<TextBlock>(disconnected,"AccountStatusText").Text.Contains("클라이언트가 설정되지 않았습니다"),"missing client shows setup guidance instead of opening a browser");
-            // YouTube stays unusable in the main window while no client exists.
-            Call(main,"RefreshUploadUi");
-            Check(!Control<CheckBox>(main,"UploadYouTubeCheck").IsEnabled,"YouTube upload stays disabled without an OAuth client");
-            typeof(GoogleClientConfig).GetProperty("CandidatePathOverride",BindingFlags.Static|BindingFlags.NonPublic)!.SetValue(null,null);
-            typeof(GoogleClientConfig).GetMethod("ResetForTests",BindingFlags.Static|BindingFlags.NonPublic)!.Invoke(null,null);
-
-            // ---- stale availability after grant loss during upload (reproduced UI bug) ----
-            // Re-grant YouTube, re-enable the UI, then narrow the saved token mid-flow and run
-            // the real UploadRecordingAsync. The scope refusal must happen before any HTTP and
-            // the post-upload refresh must leave the checkbox disabled and unchecked.
-            typeof(GoogleClientConfig).GetProperty("CandidatePathOverride",BindingFlags.Static|BindingFlags.NonPublic)!
-                .SetValue(null,new[]{Path.Combine(isolated,"client.json")});
-            typeof(GoogleClientConfig).GetMethod("ResetForTests",BindingFlags.Static|BindingFlags.NonPublic)!.Invoke(null,null);
-            var granted=new GoogleTokens { AccessToken="ok",RefreshToken="r",AccessTokenExpiry=DateTime.UtcNow.AddHours(1),Scopes=[GoogleOAuthClient.ScopeYouTube] };
-            TokenStore.Save(GoogleService.YouTube,granted);
-            Call(main,"RefreshUploadUi");
-            Check(Control<CheckBox>(main,"UploadYouTubeCheck").IsEnabled,"precondition: YouTube available while grant is valid");
-            Control<CheckBox>(main,"UploadYouTubeCheck").IsChecked=true;
-            // Narrow the SAVED grant exactly like a mid-flight refresh would, and PROVE the stored
-            // token lost the upload scope BEFORE the app method runs. Without this the upload
-            // would reach the network with fake credentials (fixture defect, now fixed).
-            var narrowed=new GoogleTokens { AccessToken="ok",RefreshToken="r",AccessTokenExpiry=DateTime.UtcNow.AddHours(1),Scopes=["openid","email"] };
-            TokenStore.Save(GoogleService.YouTube,narrowed);
-            var storedNow=TokenStore.Load(GoogleService.YouTube);
-            Check(storedNow!=null && !GoogleOAuthClient.HasScope(storedNow,GoogleOAuthClient.ScopeYouTube),
-                "precondition proved: saved token lacks youtube.upload before app invocation");
-            string clipPath=Path.Combine(isolated,"clip.mp4");
-            File.WriteAllBytes(clipPath,[1,2,3,4]);
-            string savedStatus="2026-10-10 12:00:00 - clip.mp4 저장 완료";
-            Control<TextBlock>(main,"StatusText").Text=savedStatus;
-            // UploadRecordingAsync touches UI directly; start it on the window's Dispatcher like
-            // the production async-void handler does, then pump frames with a hard 10s bound so a
-            // broken fixture can never hang the suite again.
-            var uploadTask=(Task)main.Dispatcher.Invoke(new Func<Task>(()=>(Task)Call(main,"UploadRecordingAsync",clipPath,savedStatus)!))!;
-            var pumpDeadline=DateTime.UtcNow.AddSeconds(10);
-            while (!uploadTask.IsCompleted && DateTime.UtcNow<pumpDeadline)
+            Control<TextBox>(main, "OutputDirText").Text = directory;
+            Call(main, "SaveSettingsFromControls");
+            main.SizeToContent = SizeToContent.Manual;
+            main.Height = 750;
+            main.Show();
+            main.UpdateLayout();
+            Snapshot(main, Path.Combine(directory, "main-normal.png"));
+            main.Height = 480;
+            main.UpdateLayout();
+            var scroll = Control<ScrollViewer>(main, "SettingsScrollViewer");
+            Check(scroll.ScrollableHeight > 0, "small window scrolls instead of clipping controls");
+            var banner = Control<Button>(main, "MazelineBanner");
+            var point = banner.TranslatePoint(new Point(), (UIElement)main.Content);
+            Check(point.Y >= 0 && point.Y + banner.ActualHeight <= ((FrameworkElement)main.Content).ActualHeight + 1, "banner stays fully visible on a small window");
+            scroll.ScrollToBottom();
+            main.UpdateLayout();
+            Snapshot(main, Path.Combine(directory, "main-small.png"));
+            dialog.Show();
+            dialog.UpdateLayout();
+            Snapshot(dialog, Path.Combine(directory, "preferences.png"));
+            dialog.Close();
+            if (args.Length == 2 && args[0] == "--native")
+                Await(main.Dispatcher.Invoke(() => CheckNativeRecordingAsync(main, Path.GetFullPath(args[1]), directory)));
+            Console.WriteLine($"All {_passed} UI checks passed. Artifacts: {directory}");
+            if (args.Length == 1 && args[0] == "--preview")
             {
-                System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(
-                    System.Windows.Threading.DispatcherPriority.Background,
-                    new Action(delegate { }));
-                uploadTask.Wait(50);
+                main.Height = 750;
+                scroll.ScrollToTop();
+                main.Closed += (_, _) => app.Shutdown();
+                app.Run(main);
             }
-            Check(uploadTask.IsCompleted,"upload method completes within the 10s dispatcher-pump bound");
-            uploadTask.GetAwaiter().GetResult();
-            // The saved token now carries only openid/email: the upload must have been refused
-            // before any Google request and availability must be re-evaluated by the app itself.
-            Check(!Control<CheckBox>(main,"UploadYouTubeCheck").IsEnabled,"checkbox disabled after grant loss during upload");
-            Check(Control<CheckBox>(main,"UploadYouTubeCheck").IsChecked!=true,"checkbox unchecked after grant loss during upload");
-            Check(Control<TextBlock>(main,"StatusText").Text.Contains("업로드 실패"),"upload refusal is reported against the service");
-            Check(Control<TextBlock>(main,"StatusText").Text.Contains(savedStatus),"local saved-file status is retained");
-            Check(typeof(MainWindow).GetField("_uploadCancellation",Private)!.GetValue(main)==null,"no cancellation state leaks after refusal");
-            Check(Control<FrameworkElement>(main,"UploadCancelPanel").Visibility==Visibility.Collapsed,"busy panel cleared after refusal");
-
-            // ---- completion phase (real production helper) with userinfo HTTP error ----
-            // The settings dialog must still save a valid YouTube grant when the account-label
-            // lookup fails, and report connected with a generic label.
-            var dialog2=new SettingsWindow("offline-test-only",null,null,null);
-            var badUserinfo=new HttpFake(_ => new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError)
-            { Content=new StringContent("userinfo down",System.Text.Encoding.UTF8,"text/plain") });
-            using var completionOauth=new GoogleOAuthClient("offline-test-only",handler:badUserinfo);
-            var grant=new GoogleTokens { AccessToken="tk",RefreshToken="rf",AccessTokenExpiry=DateTime.UtcNow.AddHours(1),Scopes=[GoogleOAuthClient.ScopeYouTube] };
-            var completionTask=dialog2.Dispatcher.Invoke(new Func<Task>(()=>(Task)Call(dialog2,"CompleteConnectionForTestAsync",GoogleService.YouTube,completionOauth,grant,CancellationToken.None)!))!;
-            var completionDeadline=DateTime.UtcNow.AddSeconds(10);
-            while (!completionTask.IsCompleted && DateTime.UtcNow<completionDeadline)
-            {
-                System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(
-                    System.Windows.Threading.DispatcherPriority.Background,
-                    new Action(delegate { }));
-                completionTask.Wait(50);
-            }
-            Check(completionTask.IsCompleted,"completion phase finishes within the 10s bound");
-            completionTask.GetAwaiter().GetResult();
-            var savedAfter=TokenStore.Load(GoogleService.YouTube);
-            Check(savedAfter!=null && GoogleOAuthClient.HasScope(savedAfter,GoogleOAuthClient.ScopeYouTube)
-                && savedAfter.AccessToken=="tk","valid YouTube grant is persisted despite userinfo failure");
-            Check(Control<TextBlock>(dialog2,"AccountStatusText").Text.Contains("연결 완료"),"dialog reports connected");
-            Check(Control<TextBlock>(dialog2,"AccountStatusText").Text.Contains("가져오지 못했습니다"),"label-fetch failure note is preserved in confirmation text");
-            // Cancellation during the label fetch must propagate and leave the on-disk token
-            // BYTE-IDENTICAL. Use a DISTINCT unsaved candidate so an accidental overwrite (same
-            // access/refresh/email as the stored grant) could not pass unnoticed.
-            byte[] ciphertextBefore=File.ReadAllBytes(TokenStoreFilePathForTest(GoogleService.YouTube));
-            var candidate=new GoogleTokens
-            {
-                AccessToken="candidate-access-9", RefreshToken="candidate-refresh-9",
-                AccessTokenExpiry=DateTime.UtcNow.AddHours(1),
-                Scopes=[GoogleOAuthClient.ScopeYouTube], Email="candidate@example.com",
-            };
-            var cancelCts2=new CancellationTokenSource(); cancelCts2.Cancel();
-            var hungOauth=new GoogleOAuthClient("offline-test-only",handler:new HungHandler());
-            var cancelled=dialog2.Dispatcher.Invoke(new Func<Task>(()=>(Task)Call(dialog2,"CompleteConnectionForTestAsync",GoogleService.YouTube,hungOauth,candidate,cancelCts2.Token)!))!;
-            var cd2=DateTime.UtcNow.AddSeconds(10);
-            while (!cancelled.IsCompleted && DateTime.UtcNow<cd2)
-            {
-                System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(
-                    System.Windows.Threading.DispatcherPriority.Background,new Action(delegate { }));
-                cancelled.Wait(50);
-            }
-            // Bound the wait BEFORE awaiting: the loop must never fall into an unbounded GetResult.
-            Check(cancelled.IsCompleted,"cancelled completion finishes within the 10s pump bound");
-            bool propagated=false;
-            try { cancelled.GetAwaiter().GetResult(); }
-            catch (OperationCanceledException) { propagated=true; }
-            Check(propagated,"label-fetch cancellation propagates as OperationCanceledException");
-            byte[] ciphertextAfter=File.ReadAllBytes(TokenStoreFilePathForTest(GoogleService.YouTube));
-            Check(ciphertextAfter.SequenceEqual(ciphertextBefore),"encrypted token bytes are exactly unchanged after cancellation");
-            var preserved=TokenStore.Load(GoogleService.YouTube);
-            Check(preserved!=null && preserved.AccessToken=="tk" && preserved.RefreshToken=="rf"
-                && string.IsNullOrEmpty(preserved.Email),
-                "stored grant keeps its old access/refresh/email (candidate was never saved)");
-
-            Console.WriteLine($"Drive hidden checks passed: {passed}. No recording or network.");
             return 0;
         }
-        finally{Directory.Delete(isolated,true);}
+        finally
+        {
+            dialog?.Close();
+            main?.Close();
+            app.Shutdown();
+            AppSettings.DirectoryOverride = HotkeySettings.DirectoryOverride = App.LogDirectoryOverride = null;
+        }
     }
 
-    /// <summary>Effective on-disk token file path (respects the GUID Temp DirectoryOverride).</summary>
-    internal static string TokenStoreFilePathForTest(GoogleService service)
+    private static async Task CheckNativeRecordingAsync(MainWindow main, string ffmpeg, string directory)
     {
-        var method = typeof(TokenStore).GetMethod("FilePath", BindingFlags.Static | BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException("TokenStore.FilePath hook missing");
-        return (string)method.Invoke(null, new object[] { service })!;
+        // Capture only this owned test window. No desktop, user windows or audio.
+        var surface = new Window { Title = "CaptureCanva · 녹화 검증 창", Width = 360, Height = 260,
+            Content = new TextBlock { Text = "CaptureCanva\nMP4 + GIF 검증", FontSize = 30, Padding = new Thickness(24), Foreground = Brushes.White,
+                Background = new LinearGradientBrush(Colors.DarkBlue, Colors.Crimson, 45) } };
+        surface.Show();
+        try
+        {
+            VideoEncoder encoder = await Ffmpeg.DetectEncoderAsync(ffmpeg);
+            Console.WriteLine("Native recording encoder: " + Ffmpeg.DisplayName(encoder));
+            var target = new CaptureTarget(CaptureMode.Window, new WindowInteropHelper(surface).Handle, null, "isolated test window");
+            var session = new RecordingSession(new RecordingOptions(target, ffmpeg, directory, 60, VideoQuality.High, encoder, false, false, false));
+            await session.StartAsync();
+            await Task.Delay(650);
+            session.Pause();
+            var pausedAt = session.Elapsed;
+            await Task.Delay(200);
+            Check(session.Elapsed == pausedAt && session.IsPaused, "native pause freezes elapsed time");
+            session.Resume();
+            await Task.Delay(650);
+            Set(main, "_ffmpegPath", ffmpeg);
+            Set(main, "_session", session);
+            Set(main, "_recordingGifPreset", GifPreset.Standard);
+            Call(main, "SetRecordingUi", true);
+            await (Task)Call(main, "StopRecordingAsync", new object?[] { null })!;
+            string mp4 = Control<Run>(main, "LastFileText").Text;
+            string gif = Control<Run>(main, "LastGifFileText").Text;
+            Check(File.Exists(mp4) && File.Exists(gif), "real window recording completes MP4 and automatic GIF in main UI");
+            Check(Control<TextBlock>(main, "StatusText").Text.Contains("MP4·GIF 저장 완료"), "main UI confirms MP4 and GIF success");
+            Check(Control<TextBlock>(main, "LastFileLink").Visibility == Visibility.Visible && Control<TextBlock>(main, "LastGifFileLink").Visibility == Visibility.Visible, "both result links are available");
+            var decoded = await Ffmpeg.RunAsync(ffmpeg, $"-hide_banner -loglevel error -i {Ffmpeg.Quote(mp4)} -f null NUL", TimeSpan.FromSeconds(20));
+            Check(decoded.ExitCode == 0, "native MP4 decodes without errors");
+            decoded = await Ffmpeg.RunAsync(ffmpeg, $"-hide_banner -loglevel error -ignore_loop 1 -i {Ffmpeg.Quote(gif)} -f null NUL", TimeSpan.FromSeconds(20));
+            Check(decoded.ExitCode == 0, "native GIF decodes without errors");
+            Check(Directory.GetFiles(directory, "*.part.mkv").Length == 0 && Directory.GetFiles(directory, ".gif-*").Length == 0, "native recording cleans temporary files");
+            main.Height = 750;
+            Control<ScrollViewer>(main, "SettingsScrollViewer").ScrollToBottom();
+            main.UpdateLayout();
+            Snapshot(main, Path.Combine(directory, "recording-completed.png"));
+            byte[] previousGif = File.ReadAllBytes(gif);
+            Set(main, "_ffmpegPath", Path.Combine(directory, "missing-ffmpeg.exe"));
+            await (Task)Call(main, "ConvertGifAsync", mp4, GifPreset.Standard, null)!;
+            Check(Control<Button>(main, "RetryGifButton").Visibility == Visibility.Visible && previousGif.SequenceEqual(File.ReadAllBytes(gif)), "GIF failure offers retry and preserves existing GIF");
+            Check(Directory.GetFiles(App.LogDirectory, "*.log").Any(p => File.ReadAllText(p).Contains("GIF conversion failed")), "conversion failure is logged");
+            Set(main, "_ffmpegPath", ffmpeg);
+            Call(main, "OnRetryGif", main, new RoutedEventArgs());
+            while ((bool)typeof(MainWindow).GetField("_busy", Private)!.GetValue(main)!) await Task.Delay(25);
+            Check(Control<TextBlock>(main, "StatusText").Text.Contains("MP4·GIF 저장 완료") && Control<Button>(main, "RetryGifButton").Visibility == Visibility.Collapsed, "GIF retry succeeds through actual click handler");
+        }
+        finally { surface.Close(); }
     }
-}
 
-/// <summary>Local fake handler for completion-phase tests (userinfo errors, hung calls).</summary>
-internal sealed class HttpFake(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
-{
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        => Task.FromResult(respond(request));
-}
-
-/// <summary>Handler whose HTTP calls never complete (simulates a hung userinfo endpoint).</summary>
-internal sealed class HungHandler : HttpMessageHandler
-{
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    private static void Await(Task task)
     {
-        var tcs = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
-        cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken));
-        return tcs.Task;
+        var deadline = DateTime.UtcNow.AddSeconds(45);
+        while (!task.IsCompleted && DateTime.UtcNow < deadline)
+            Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.Background, new Action(() => Thread.Sleep(5)));
+        if (!task.IsCompleted) throw new TimeoutException("UI check exceeded 45 seconds.");
+        task.GetAwaiter().GetResult();
+    }
+    private static object? Call(object target, string name, params object?[] args) => Dispatcher.CurrentDispatcher.Invoke(() => target.GetType().GetMethod(name, Private)!.Invoke(target, args));
+    private static void Set(object target, string name, object? value) => target.GetType().GetField(name, Private)!.SetValue(target, value);
+    private static T Control<T>(Window window, string name) => (T)window.FindName(name);
+    private static void Check(bool condition, string message)
+    {
+        if (!condition) throw new InvalidOperationException(message);
+        _passed++;
+        Console.WriteLine("PASS " + message);
+    }
+    private static void Snapshot(Window window, string path)
+    {
+        var content = (FrameworkElement)window.Content;
+        var bitmap = new RenderTargetBitmap((int)Math.Ceiling(content.ActualWidth), (int)Math.Ceiling(content.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+        var background = new DrawingVisual();
+        using (var drawing = background.RenderOpen())
+            drawing.DrawRectangle(SystemColors.WindowBrush, null, new Rect(0, 0, bitmap.Width, bitmap.Height));
+        bitmap.Render(background);
+        bitmap.Render(content);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var file = File.Create(path);
+        encoder.Save(file);
     }
 }

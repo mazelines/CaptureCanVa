@@ -6,7 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using CaptureCanva.Capture;
-using CaptureCanva.Accounts;
+using CaptureCanva.Preferences;
 using CaptureCanva.Interop;
 using CaptureCanva.Recording;
 using CaptureCanva.UI;
@@ -35,7 +35,6 @@ public partial class MainWindow : Window
     private bool _windowClipped;
     private GifPreset? _recordingGifPreset;
     private CancellationTokenSource? _gifConversionCancellation;
-    private CancellationTokenSource? _uploadCancellation;
 
     public MainWindow()
     {
@@ -72,9 +71,23 @@ public partial class MainWindow : Window
             return;
         }
 
-        _encoder = await Ffmpeg.DetectEncoderAsync(_ffmpegPath);
-        EncoderText.Text = Ffmpeg.DisplayName(_encoder);
-        RecordButton.IsEnabled = true;
+        try
+        {
+            _encoder = await Ffmpeg.DetectEncoderAsync(_ffmpegPath);
+            EncoderText.Text = Ffmpeg.DisplayName(_encoder);
+            if (!_closeAfterStop)
+            {
+                RecordButton.IsEnabled = true;
+                StatusText.Text = "녹화할 대상을 선택한 뒤 녹화를 시작하세요.";
+            }
+        }
+        catch (Exception ex)
+        {
+            App.Log("FFmpeg initialization failed", ex);
+            EncoderText.Text = "확인 실패";
+            StatusText.Text = "인코더를 준비하지 못했습니다. 릴리스 ZIP을 다시 풀어 실행해 주세요.";
+            _ffmpegPath = null;
+        }
     }
 
     // ───────────────────────── settings ↔ controls ─────────────────────────
@@ -93,7 +106,9 @@ public partial class MainWindow : Window
             monitors.FirstOrDefault(m => m.DeviceName == _settings.RegionMonitorDevice) is { } regionMonitor)
         {
             var screenRect = savedRegion with { X = savedRegion.X + regionMonitor.Bounds.X, Y = savedRegion.Y + regionMonitor.Bounds.Y };
-            if (screenRect.Right <= regionMonitor.Bounds.Right && screenRect.Bottom <= regionMonitor.Bounds.Bottom)
+            if (screenRect.Width > 0 && screenRect.Height > 0 &&
+                screenRect.X >= regionMonitor.Bounds.X && screenRect.Y >= regionMonitor.Bounds.Y &&
+                screenRect.Right <= regionMonitor.Bounds.Right && screenRect.Bottom <= regionMonitor.Bounds.Bottom)
                 SetRegion(new RegionSelection(regionMonitor, screenRect));
         }
 
@@ -105,14 +120,9 @@ public partial class MainWindow : Window
         HideSelfCheck.IsChecked = _settings.HideFromCapture;
         CreateGifCheck.IsChecked = _settings.CreateGif;
         SelectByTag(GifPresetList, (Enum.IsDefined(_settings.GifPreset) ? _settings.GifPreset : GifPreset.Standard).ToString());
-        UploadYouTubeCheck.IsChecked = _settings.UploadYouTube;
-        // Drive is feature-gated off: never restore the stale persisted preference onto the
-        // hidden checkbox, so a saved UploadDrive=true cannot silently activate the hidden path.
-        UploadDriveCheck.IsChecked = _settings.UploadDrive && DriveFeatureGate.Enabled;
-        YouTubePrivateRadio.IsChecked = !_settings.YouTubePublic;
-        RefreshUploadUi();
-
-
+        // The save-folder box is read-only and set only here/programmatic change; an empty settings
+        // value falls back to the default (MyVideos\CaptureCanva) instead of a blank path.
+        OutputDirText.Text = _settings.EffectiveOutputDirectory;
         (_settings.Mode switch
         {
             CaptureMode.Window => ModeWindow,
@@ -121,7 +131,7 @@ public partial class MainWindow : Window
         }).IsChecked = true;
     }
 
-    private void SaveSettingsFromControls()
+    private string? SaveSettingsFromControls()
     {
         _settings.Mode = CurrentMode;
         _settings.MonitorDevice = (MonitorList.SelectedItem as MonitorInfo)?.DeviceName;
@@ -138,12 +148,19 @@ public partial class MainWindow : Window
         _settings.HideFromCapture = HideSelfCheck.IsChecked == true;
         _settings.CreateGif = CreateGifCheck.IsChecked == true;
         _settings.GifPreset = SelectedGifPreset;
-        _settings.UploadYouTube = UploadYouTubeCheck.IsChecked == true;
-        // While Drive is gated off, persist false to heal any stale saved true.
-        _settings.UploadDrive = UploadDriveCheck.IsChecked == true && DriveFeatureGate.Enabled;
-        _settings.YouTubePublic = YouTubePrivateRadio.IsChecked != true;
-        _settings.OutputDirectory = OutputDirText.Text;
-        _settings.Save();
+        _settings.OutputDirectory = string.IsNullOrWhiteSpace(OutputDirText.Text)
+            ? AppSettings.DefaultOutputDirectory
+            : OutputDirText.Text;
+        try
+        {
+            _settings.Save();
+            return null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            App.Log("Settings save failed", ex);
+            return "설정을 저장하지 못했습니다. 이번 실행에는 적용되지만 다음 실행에 유지되지 않을 수 있습니다.";
+        }
     }
 
     private static void SelectByTag(ComboBox combo, string tag)
@@ -300,30 +317,35 @@ public partial class MainWindow : Window
         if (target == null)
             return;
 
-        SaveSettingsFromControls();
-        _recordingGifPreset = _settings.CreateGif ? _settings.GifPreset : null;
-        var options = new RecordingOptions(target, _ffmpegPath!, _settings.OutputDirectory, _settings.Fps, _settings.Quality,
-            _encoder, _settings.CaptureCursor, _settings.SystemAudio, _settings.Microphone);
-
         _busy = true;
-        RecordButton.IsEnabled = false;
+        SetRecordingUi(false);
+        string? settingsWarning = SaveSettingsFromControls();
+        _recordingGifPreset = _settings.CreateGif ? _settings.GifPreset : null;
         StatusText.Text = "녹화 준비 중…";
-        LastFileLink.Visibility = Visibility.Collapsed;
-        LastGifFileLink.Visibility = Visibility.Collapsed;
-        var session = new RecordingSession(options);
-        session.Interrupted += message => Dispatcher.InvokeAsync(() => StopRecordingAsync(message));
+        RecordingSession session;
+        RecordingOptions options;
         try
         {
+            string outputDirectory = _settings.EffectiveOutputDirectory;
+            Directory.CreateDirectory(outputDirectory);
+            options = new RecordingOptions(target, _ffmpegPath!, outputDirectory, _settings.Fps, _settings.Quality,
+                _encoder, _settings.CaptureCursor, _settings.SystemAudio, _settings.Microphone);
+            session = new RecordingSession(options);
+            session.Interrupted += message => Dispatcher.InvokeAsync(() => StopRecordingAsync(message));
             await session.StartAsync();
         }
         catch (Exception ex)
         {
-            StatusText.Text = "녹화를 시작하지 못했습니다: " + ex.Message;
+            App.Log("Recording start failed", ex);
+            StatusText.Text = "녹화를 시작하지 못했습니다. 저장 폴더와 녹화 대상을 확인해 주세요.\n" + ex.Message;
             _busy = false;
-            RecordButton.IsEnabled = true;
+            _recordingGifPreset = null;
+            SetRecordingUi(false);
+            if (_closeAfterStop) Close();
             return;
         }
 
+        LastFileLink.Visibility = LastGifFileLink.Visibility = RetryGifButton.Visibility = Visibility.Collapsed;
         _session = session;
         _busy = false;
         _lagWarned = false;
@@ -346,7 +368,8 @@ public partial class MainWindow : Window
         string status = $"녹화 중 — {target.Description}  ({session.Width} × {session.Height}, {options.Fps} fps)";
         if (_windowClipped)
             status += "\n⚠ 창이 모니터 화면 밖으로 나가 있어 보이는 부분만 녹화됩니다.";
-        StatusText.Text = status + string.Concat(session.Warnings.Select(w => "\n⚠ " + w));
+        StatusText.Text = status + string.Concat(session.Warnings.Select(w => "\n⚠ " + w))
+            + (settingsWarning == null ? "" : "\n" + settingsWarning);
     }
 
     private async Task StopRecordingAsync(string? reason)
@@ -374,71 +397,81 @@ public partial class MainWindow : Window
             StatusText.Text = (reason != null ? reason + "\n" : "") + "저장 완료:";
             LastFileText.Text = path;
             LastFileLink.Visibility = Visibility.Visible;
-            if (_recordingGifPreset is { } preset)
-            {
-                using var cancellation = new CancellationTokenSource();
-                _gifConversionCancellation = cancellation;
-                GifProgressPanel.Visibility = Visibility.Visible;
-                CancelGifButton.IsEnabled = true;
-                var progress = new Progress<string>(stage =>
-                {
-                    if (ReferenceEquals(_gifConversionCancellation, cancellation) && !cancellation.IsCancellationRequested)
-                        StatusText.Text = (reason != null ? reason + "\n" : "") + "MP4 저장 완료. " + stage;
-                });
-                try
-                {
-                    string gifPath = await GifConverter.ConvertAsync(_ffmpegPath!, path, preset, progress, cancellation.Token);
-                    LastGifFileText.Text = gifPath;
-                    LastGifFileLink.Visibility = Visibility.Visible;
-                    double sizeMb = new FileInfo(gifPath).Length / (1024.0 * 1024.0);
-                    StatusText.Text = (reason != null ? reason + "\n" : "") + $"MP4·GIF 저장 완료 (GIF {sizeMb:F1} MB):";
-                }
-                catch (OperationCanceledException)
-                {
-                    StatusText.Text = (reason != null ? reason + "\n" : "") + "MP4 저장 완료. GIF 변환을 취소했습니다.";
-                }
-                catch (Exception ex)
-                {
-                    StatusText.Text = (reason != null ? reason + "\n" : "") + "MP4는 저장되었습니다. " + ex.Message;
-                }
-                finally
-                {
-                    _gifConversionCancellation = null;
-                    GifProgressPanel.Visibility = Visibility.Collapsed;
-                }
-            }
-
-            if (!_closeAfterStop && (UploadYouTubeCheck.IsChecked == true
-                || (UploadDriveCheck.IsChecked == true && DriveFeatureGate.Enabled)))
-            {
-                string baseStatus = StatusText.Text;
-                await UploadRecordingAsync(path, baseStatus);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // Uploads were cancelled; the local MP4/GIF files are unaffected.
+            if (!_closeAfterStop && _recordingGifPreset is { } preset)
+                await ConvertGifAsync(path, preset, reason);
         }
         catch (Exception ex)
         {
-            StatusText.Text = ex.Message;
+            App.Log("Recording save failed", ex);
+            StatusText.Text = "녹화 파일을 저장하지 못했습니다.\n" + ex.Message;
         }
         finally
         {
             _busy = false;
             _recordingGifPreset = null;
-            RecordButton.IsEnabled = true;
-            CreateGifCheck.IsEnabled = true;
-            GifPresetList.IsEnabled = CreateGifCheck.IsChecked == true;
+            SetRecordingUi(false);
         }
 
         if (_closeAfterStop)
             Close();
     }
 
+    private async Task ConvertGifAsync(string path, GifPreset preset, string? reason)
+    {
+        string prefix = reason == null ? "" : reason + "\n";
+        using var cancellation = new CancellationTokenSource();
+        _gifConversionCancellation = cancellation;
+        GifProgressPanel.Visibility = Visibility.Visible;
+        CancelGifButton.IsEnabled = true;
+        RetryGifButton.Visibility = Visibility.Collapsed;
+        var progress = new Progress<string>(stage =>
+        {
+            if (ReferenceEquals(_gifConversionCancellation, cancellation) && !cancellation.IsCancellationRequested)
+                StatusText.Text = prefix + "MP4 저장 완료. " + stage;
+        });
+        try
+        {
+            string gifPath = await GifConverter.ConvertAsync(_ffmpegPath!, path, preset, progress, cancellation.Token);
+            LastGifFileText.Text = gifPath;
+            LastGifFileLink.Visibility = Visibility.Visible;
+            double sizeMb = new FileInfo(gifPath).Length / (1024.0 * 1024.0);
+            StatusText.Text = prefix + $"MP4·GIF 저장 완료 · GIF {sizeMb:F1} MB";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText.Text = prefix + "MP4 저장 완료. GIF 변환을 취소했습니다. 다시 만들 수 있습니다.";
+            RetryGifButton.Visibility = Visibility.Visible;
+        }
+        catch (Exception ex)
+        {
+            App.Log("GIF conversion failed", ex);
+            StatusText.Text = prefix + "MP4는 저장되었습니다. GIF 변환에 실패했습니다. 다시 시도하거나 로그를 확인해 주세요.";
+            RetryGifButton.Visibility = Visibility.Visible;
+        }
+        finally
+        {
+            _gifConversionCancellation = null;
+            GifProgressPanel.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private async void OnRetryGif(object sender, RoutedEventArgs e)
+    {
+        if (_busy || _session != null || _ffmpegPath == null) return;
+        _busy = true;
+        SetRecordingUi(false);
+        try { await ConvertGifAsync(LastFileText.Text, SelectedGifPreset, null); }
+        finally
+        {
+            _busy = false;
+            SetRecordingUi(false);
+            if (_closeAfterStop) Close();
+        }
+    }
+
     private void TogglePause()
     {
-        if (_session == null)
+        if (_session == null || _busy)
             return;
         if (_session.IsPaused)
             _session.Resume();
@@ -478,17 +511,17 @@ public partial class MainWindow : Window
     private void SetRecordingUi(bool recording)
     {
         RecordButton.Content = recording ? "■ 녹화 중지" : "● 녹화 시작";
-        PauseButton.IsEnabled = recording;
+        PauseButton.IsEnabled = recording && !_busy;
+        RecordButton.IsEnabled = !_busy && _ffmpegPath != null;
         PauseButton.Content = "일시정지";
-        ModeMonitor.IsEnabled = ModeWindow.IsEnabled = ModeRegion.IsEnabled = !recording;
-        MonitorList.IsEnabled = WindowPanel.IsEnabled = RegionPanel.IsEnabled = !recording;
-        FpsList.IsEnabled = QualityList.IsEnabled = !recording;
-        CursorCheck.IsEnabled = SystemAudioCheck.IsEnabled = MicCheck.IsEnabled = !recording;
-        CreateGifCheck.IsEnabled = !recording;
-        GifPresetList.IsEnabled = !recording && CreateGifCheck.IsChecked == true;
-        UploadYouTubeCheck.IsEnabled = UploadPrivacyPanel.IsEnabled = !recording;
-        // Feature gate: the hidden Drive checkbox never becomes interactive.
-        UploadDriveCheck.IsEnabled = !recording && DriveFeatureGate.Enabled;
+        bool editable = !recording && !_busy;
+        ModeMonitor.IsEnabled = ModeWindow.IsEnabled = ModeRegion.IsEnabled = editable;
+        MonitorList.IsEnabled = WindowPanel.IsEnabled = RegionPanel.IsEnabled = editable;
+        FpsList.IsEnabled = QualityList.IsEnabled = editable;
+        CursorCheck.IsEnabled = SystemAudioCheck.IsEnabled = MicCheck.IsEnabled = editable;
+        HideSelfCheck.IsEnabled = OutputActionsPanel.IsEnabled = editable;
+        CreateGifCheck.IsEnabled = RetryGifButton.IsEnabled = editable;
+        GifPresetList.IsEnabled = editable && CreateGifCheck.IsChecked == true;
         if (recording)
         {
             _timer.Start();
@@ -518,14 +551,14 @@ public partial class MainWindow : Window
         }
     }
 
-    // ───────────────────────── accounts & upload ─────────────────────────
+    // ───────────────────────── preferences ─────────────────────────
 
     private void OnOpenSettings(object sender, RoutedEventArgs e)
     {
         // The settings window sees the CURRENTLY ACTIVE pair (which matches the saved file after
         // apply, and the effective defaults before the first apply), so display and reality agree.
-        var window = new SettingsWindow(GoogleClientConfig.ClientId, GoogleClientConfig.ClientSecret,
-            _activeRecordHotkey, _activePauseHotkey,
+        if (_busy || _session != null) return;
+        var window = new SettingsWindow(_activeRecordHotkey, _activePauseHotkey,
             tryApply: TryApplyHotkeys,
             setSuspended: _ => { })
         { Owner = this };
@@ -540,176 +573,6 @@ public partial class MainWindow : Window
             Native.UnregisterHotKey(Handle, HotkeyPause);
             if (!TryRegisterPair(_activeRecordHotkey, _activePauseHotkey)) RegisterHotkeys();
         }
-        RefreshUploadUi();
-    }
-
-    /// <summary>Upload checkboxes only offer services whose account is actually connected.
-    /// Drive is feature-gated: while hidden, its checkbox and token file are never touched, so
-    /// a locked stale Drive token cannot surface errors in the YouTube-only UI.</summary>
-    private void RefreshUploadUi()
-    {
-        var errors = new List<string>();
-        bool Available(GoogleService service, string scope)
-        {
-            if (GoogleClientConfig.ClientId == null) return false;
-            try { return TokenStore.Load(service) is { } tokens && GoogleOAuthClient.HasScope(tokens, scope); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                errors.Add($"[{service}] 토큰 파일을 읽을 수 없습니다: {ex.Message}");
-                return false;
-            }
-        }
-        bool youtube = Available(GoogleService.YouTube, GoogleOAuthClient.ScopeYouTube);
-        UploadYouTubeCheck.IsEnabled = youtube;
-        if (!youtube) UploadYouTubeCheck.IsChecked = false;
-
-        if (DriveFeatureGate.Enabled)
-        {
-            bool drive = Available(GoogleService.Drive, GoogleOAuthClient.ScopeDrive);
-            UploadDriveCheck.IsEnabled = drive;
-            if (!drive) UploadDriveCheck.IsChecked = false;
-        }
-        else
-        {
-            // Gate off: the checkbox may be Collapsed in XAML but its default IsEnabled is true,
-            // so disable and uncheck it explicitly.
-            UploadDriveCheck.IsEnabled = false;
-            UploadDriveCheck.IsChecked = false;
-        }
-        // Gate off: leave the hidden checkbox exactly as XAML made it (Collapsed, unchecked).
-
-        if (errors.Count > 0) StatusText.Text = string.Join("\n", errors);
-    }
-
-    /// <summary>
-    /// Uploads the finished MP4 to every service the user ticked. Per-service errors are
-    /// reported inline; one failing service never blocks the other.
-    /// </summary>
-    private async Task UploadRecordingAsync(string videoPath, string baseStatus)
-    {
-        string? clientId = GoogleClientConfig.ClientId;
-        if (clientId == null)
-            return;
-
-        var progress = new Progress<string>(stage =>
-        {
-            if (_uploadCancellation is { IsCancellationRequested: false })
-                StatusText.Text = "저장 완료. " + stage;
-        });
-        var cancellation = new CancellationTokenSource();
-        _uploadCancellation = cancellation;
-        CancelUploadButton.IsEnabled = true;
-        var jobs = new List<(string Service, Func<GoogleOAuthClient, Task<UploadResult>> Run)>();
-        if (UploadYouTubeCheck.IsChecked == true)
-        {
-            bool isPublic = YouTubePrivateRadio.IsChecked != true;
-            string title = Path.GetFileNameWithoutExtension(videoPath);
-            jobs.Add(("YouTube", async oauth =>
-            {
-                var tokens = TokenStore.Load(GoogleService.YouTube);
-                if (tokens == null || !GoogleOAuthClient.HasScope(tokens, GoogleOAuthClient.ScopeYouTube))
-                    throw new InvalidOperationException("YouTube 업로드 권한이 없습니다. 환경설정에서 다시 연결해 주세요.");
-                using var uploader = new YouTubeUploader(tokens);
-                return await uploader.UploadAsync(oauth, videoPath, title, "CaptureCanva로 녹화했습니다.",
-                    isPublic, progress, cancellation.Token);
-            }));
-        }
-        // Last-line-of-defense: even a stale checked hidden checkbox cannot create a Drive job
-        // while the feature gate is off (recording must never touch a hidden integration).
-        if (UploadDriveCheck.IsChecked == true && DriveFeatureGate.Enabled)
-        {
-            jobs.Add(("Google Drive", async oauth =>
-            {
-                var tokens = TokenStore.Load(GoogleService.Drive);
-                if (tokens == null || !GoogleOAuthClient.HasScope(tokens, GoogleOAuthClient.ScopeDrive))
-                    throw new InvalidOperationException("Google Drive 업로드 권한이 없습니다. 환경설정에서 다시 연결해 주세요.");
-                using var uploader = new GoogleDriveUploader(tokens);
-                return await uploader.UploadAsync(oauth, videoPath, null, false, progress, cancellation.Token);
-            }));
-        }
-        if (jobs.Count == 0)
-        {
-            _uploadCancellation = null;
-            cancellation.Dispose();
-            return;
-        }
-
-        var lines = new List<string>();
-        var links = new List<(string Service, string Url)>();
-        UploadCancelPanel.Visibility = Visibility.Visible;
-        try
-        {
-            foreach (var (service, run) in jobs)
-            {
-                cancellation.Token.ThrowIfCancellationRequested();
-                try
-                {
-                    using var oauth = new GoogleOAuthClient(clientId, GoogleClientConfig.ClientSecret);
-                    UploadResult result = await run(oauth);
-                    links.Add((service, result.Url));
-                    lines.Add($"[{service}] 업로드 완료 — 아래 링크를 클릭해 열 수 있습니다.");
-                }
-                catch (OperationCanceledException)
-                {
-                    lines.Add($"[{service}] 업로드 취소됨");
-                    break; // user asked to stop; do not start the remaining service
-                }
-                catch (Exception ex)
-                {
-                    lines.Add($"[{service}] 업로드 실패: {ex.Message}");
-                }
-            }
-        }
-        finally
-        {
-            _uploadCancellation = null;
-            UploadCancelPanel.Visibility = Visibility.Collapsed;
-            CancelUploadButton.IsEnabled = true;
-            cancellation.Dispose();
-        }
-
-        // A run can fail because the grant was lost mid-flight (token narrowed/removed after the
-        // checkboxes were enabled). Re-evaluate availability now so the UI never keeps offering a
-        // service whose saved token can no longer upload.
-        RefreshUploadUi();
-
-        // Completed uploads render as real, openable hyperlinks (P3: a bare string is not a link).
-        if (links.Count > 0)
-        {
-            UploadLink2Panel.Visibility = Visibility.Collapsed;
-            UploadLink1Text.Text = links[0].Url;
-            if (links.Count > 1)
-            {
-                UploadLink2Panel.Visibility = Visibility.Visible;
-                UploadLink2Text.Text = links[1].Url;
-            }
-            UploadLinksText.Visibility = Visibility.Visible;
-        }
-        if (lines.Count > 0)
-            StatusText.Text = baseStatus + "\n" + string.Join("\n", lines);
-    }
-
-    private void OnOpenUploadLink(object sender, RoutedEventArgs e)
-    {
-        string? url = ReferenceEquals(sender, UploadLink1) ? UploadLink1Text.Text : UploadLink2Text.Text;
-        if (string.IsNullOrEmpty(url))
-            return;
-        try
-        {
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-        }
-        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
-        {
-            MessageBox.Show(this, "링크를 열 수 없습니다.\n" + url, "CaptureCanva",
-                MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-    }
-
-    private void OnCancelUpload(object sender, RoutedEventArgs e)
-    {
-        _uploadCancellation?.Cancel();
-        CancelUploadButton.IsEnabled = false;
-        StatusText.Text = "업로드 취소 중…";
     }
 
     // ───────────────────────── output folder ─────────────────────────
@@ -720,24 +583,59 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog(this) == true)
         {
             OutputDirText.Text = dialog.FolderName;
-            SaveSettingsFromControls();
+            StatusText.Text = SaveSettingsFromControls() ?? "저장 폴더를 변경했습니다.";
         }
     }
 
     private void OnOpenOutputDir(object sender, RoutedEventArgs e)
     {
-        Directory.CreateDirectory(OutputDirText.Text);
-        Process.Start(new ProcessStartInfo("explorer.exe", Ffmpeg.Quote(OutputDirText.Text)) { UseShellExecute = true });
+        try
+        {
+            string directory = _settings.EffectiveOutputDirectory;
+            Directory.CreateDirectory(directory);
+            OpenExplorer(directory, selectFile: false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            App.Log("Output folder unavailable", ex);
+            StatusText.Text = "저장 폴더를 열 수 없습니다. 다른 폴더를 선택해 주세요.\n" + ex.Message;
+        }
     }
 
-    private void OnOpenLastFile(object sender, RoutedEventArgs e)
+    private void OpenExplorer(string path, bool selectFile)
     {
-        // Select the file in Explorer.
-        Process.Start(new ProcessStartInfo("explorer.exe", "/select," + Ffmpeg.Quote(LastFileText.Text)) { UseShellExecute = true });
+        try
+        {
+            if (selectFile && !File.Exists(path))
+            {
+                StatusText.Text = "저장된 파일을 찾을 수 없습니다. 이동하거나 삭제했는지 확인해 주세요.";
+                return;
+            }
+            Process.Start(new ProcessStartInfo("explorer.exe", (selectFile ? "/select," : "") + Ffmpeg.Quote(path))
+                { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
+        {
+            App.Log("Explorer launch failed", ex);
+            StatusText.Text = "파일 탐색기를 열 수 없습니다.\n" + ex.Message;
+        }
     }
 
-    private void OnOpenLastGifFile(object sender, RoutedEventArgs e) =>
-        Process.Start(new ProcessStartInfo("explorer.exe", "/select," + Ffmpeg.Quote(LastGifFileText.Text)) { UseShellExecute = true });
+    private void OnOpenLastFile(object sender, RoutedEventArgs e) => OpenExplorer(LastFileText.Text, selectFile: true);
+    private void OnOpenLastGifFile(object sender, RoutedEventArgs e) => OpenExplorer(LastGifFileText.Text, selectFile: true);
+
+    private void OnOpenLogs(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Directory.CreateDirectory(App.LogDirectory);
+            OpenExplorer(App.LogDirectory, selectFile: false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            StatusText.Text = "로그 폴더를 열 수 없습니다.\n" + ex.Message;
+        }
+    }
 
     private void OnOpenMazelineWebsite(object sender, RoutedEventArgs e)
     {
@@ -896,7 +794,7 @@ public partial class MainWindow : Window
 
     protected override async void OnClosing(CancelEventArgs e)
     {
-        _uploadCancellation?.Cancel();
+        _gifConversionCancellation?.Cancel();
         if (_session != null || _busy)
         {
             // Finish the file first, then close.

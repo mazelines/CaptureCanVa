@@ -18,7 +18,6 @@ Windows용 화면 녹화 앱입니다. 전체 화면, 특정 창, 지정한 영�
 - **GIF 자동 저장**: 녹화 완료 후 같은 이름의 GIF 생성, 용도별 프리셋 선택, 변환 취소
 - **메이즈라인 홈페이지**: 앱 하단 홍보 배너에서 [메이즈라인](https://www.mazeline.tech/) 홈페이지 열기
 - **설정 저장**: 녹화 옵션, 저장 폴더, 마지막으로 지정한 영역을 다음 실행에 복원
-- **YouTube 업로드 (실험적)**: 환경설정에서 계정을 연결하고, 녹화 완료 후 MP4 업로드·취소·완료 링크 확인
 - **단축키 변경**: 환경설정에서 키 조합 지정·해제, 중복 및 다른 앱과의 충돌 확인
 
 영상은 H.264로 저장하며, 오디오를 포함하면 AAC로 인코딩합니다.
@@ -32,7 +31,7 @@ Windows용 화면 녹화 앱입니다. 전체 화면, 특정 창, 지정한 영�
 
 [최신 릴리스](https://github.com/mazelines/CaptureCanVa/releases/latest)의 `CaptureCanva-v<버전>-win-x64.zip`을 내려받아 압축을 풀고 `CaptureCanva.exe`를 실행합니다.
 
-YouTube 업로드와 단축키 설정은 [v0.3.0 릴리스](https://github.com/mazelines/CaptureCanVa/releases/tag/v0.3.0)에서 사용할 수 있습니다. 실제 Google 계정 검증이 남아 있어 YouTube 연동은 실험적 기능으로 제공합니다.
+**이 문서는 현재 `main` 브랜치 기준입니다.** 게시된 v0.3.0 배포본과 달리 현재 소스에서는 YouTube·Google Drive 연동을 제거하고, 기본 저장 폴더와 짧은 영상의 GIF 변환을 개선했습니다. 이 변경은 다음 릴리스에 포함됩니다.
 
 **v0.1.2부터 .NET 런타임과 FFmpeg를 함께 제공합니다.** 별도 설치나 `PATH` 설정 없이 바로 사용할 수 있습니다. ZIP의 파일과 폴더를 함께 유지하세요.
 
@@ -57,13 +56,13 @@ CaptureCanva/
 3. 프레임, 화질, 마우스 커서, 시스템 소리, 마이크 옵션과 GIF 저장 프리셋을 설정합니다.
 4. 저장 폴더를 확인하고 **녹화 시작**을 누릅니다.
 5. 필요하면 **일시정지**와 **계속**을 사용합니다. **녹화 중지**를 누른 뒤 저장이 끝날 때까지 기다립니다.
-6. MP4 저장이 끝나면 GIF 변환이 자동으로 진행됩니다. 완료 후 MP4·GIF 파일 링크 또는 저장 폴더의 **열기** 버튼으로 결과를 확인합니다.
+6. MP4 저장이 끝나면 GIF 변환이 자동으로 진행됩니다. 완료 후 MP4·GIF 파일 링크 또는 **폴더 열기** 버튼으로 결과를 확인합니다.
 
-기본 저장 위치는 Windows의 **동영상** 폴더 아래 `CaptureCanva`이며, 파일 이름은 `CaptureCanva_yyyyMMdd_HHmmss.mp4` 형식입니다.
+기본 저장 위치는 Windows의 **동영상** 폴더 아래 `CaptureCanva`입니다. 저장 경로가 비어 있으면 기본 경로를 복원하고, 녹화 시작 시 폴더를 자동으로 만듭니다. 파일 이름은 `CaptureCanva_yyyyMMdd_HHmmss_fff.mp4` 형식입니다.
 
 ### GIF 함께 저장
 
-v0.2.0부터 **녹화 완료 후 GIF 함께 저장**은 기본으로 켜져 있습니다. MP4를 먼저 저장한 뒤, 같은 폴더에 `CaptureCanva_yyyyMMdd_HHmmss.gif`를 생성합니다. MP4만 필요하면 이 옵션을 끄면 됩니다.
+v0.2.0부터 **녹화 완료 후 GIF 함께 저장**은 기본으로 켜져 있습니다. MP4를 먼저 저장한 뒤, 같은 폴더에 `CaptureCanva_yyyyMMdd_HHmmss_fff.gif`를 생성합니다. MP4만 필요하면 이 옵션을 끄면 됩니다.
 
 `movie2gif`의 2단계 팔레트 변환 방식과 웹용 프리셋을 통합했습니다.
 
@@ -76,7 +75,7 @@ v0.2.0부터 **녹화 완료 후 GIF 함께 저장**은 기본으로 켜져 있�
 
 화면 비율을 유지하며, 프리셋보다 작은 영상은 확대하지 않습니다. 전체 녹화 구간을 소리 없는 반복 GIF로 변환하므로 길이와 화면 변화에 따라 파일 크기가 달라집니다. 완료 메시지에 GIF 용량을 표시합니다.
 
-변환 중 **GIF 변환 취소**를 누르면 MP4만 남깁니다. GIF 생성에 실패해도 MP4는 보존하며, 다시 녹화할 수 있습니다. GIF 옵션과 프리셋은 다음 실행에도 유지됩니다.
+변환 중 **GIF 변환 취소**를 누르면 MP4만 남깁니다. GIF 생성에 실패하거나 취소하면 MP4를 보존합니다. **GIF 다시 만들기**를 누르면 현재 프리셋으로 저장된 MP4를 다시 변환합니다. 한 프레임만 있는 아주 짧은 녹화도 GIF로 저장합니다. GIF 옵션과 프리셋은 다음 실행에도 유지됩니다.
 
 ### 단축키
 
@@ -95,23 +94,7 @@ v0.2.0부터 **녹화 완료 후 GIF 함께 저장**은 기본으로 켜져 있�
 
 앱 하단에 표시된 단축키가 실제 등록된 조합입니다. 두 단축키를 함께 등록할 수 없으면 녹화 시작·중지 단축키만 등록할 수 있으며, 등록에 실패한 경우 앱의 버튼으로 제어합니다.
 
-**환경설정 → 단축키**에서 입력 상자를 클릭하고 키 조합을 누른 뒤 **단축키 적용**을 선택합니다. **지우기**로 해제한 키는 다음 실행에도 해제 상태를 유지합니다. 등록이나 저장에 실패하면 기존 설정을 유지하고 오류를 표시합니다.
-
-### YouTube 계정 연결과 업로드 (v0.3.0, 실험적)
-
-v0.3.0에 계정 연결과 업로드를 추가했습니다. 모의 HTTP·로컬 인증 콜백·Windows UI 검사를 수행했으며, 실제 Google 계정으로 로그인·갱신·업로드하는 검증은 OAuth 클라이언트 준비 후 진행해야 합니다.
-
-Google 계정 연결에는 [Google의 데스크톱 앱 OAuth 클라이언트](https://developers.google.com/identity/protocols/oauth2/native-app)가 필요합니다. Google Cloud 프로젝트에서 YouTube Data API v3를 활성화하고 **데스크톱 앱** 유형의 OAuth 클라이언트 JSON을 내려받습니다. 파일 이름을 `google-oauth-client.json`으로 바꿔 실행 파일 폴더 또는 `%APPDATA%\CaptureCanva`에 넣고 앱을 다시 실행합니다. Google이 제공하는 `installed.client_id` 형식과 `client_id`를 바로 넣는 형식을 지원합니다.
-
-1. **환경설정 → 계정 연동**에서 YouTube **연결**을 누르고 기본 브라우저에서 승인합니다.
-2. 메인 화면에서 **YouTube 업로드**를 선택합니다. YouTube는 기본으로 **비공개**입니다.
-3. 녹화가 끝나면 MP4·GIF 저장 후 선택한 서비스로 MP4를 업로드합니다. 전송량·취소 버튼·완료 링크를 표시합니다.
-
-업로드 실패나 취소 시 로컬 MP4·GIF를 보존합니다. 계정 토큰은 Windows 현재 사용자 범위(DPAPI)로 암호화해 저장합니다. OAuth 클라이언트가 없어도 녹화·GIF 기능을 사용할 수 있으며, 연결 버튼은 설정 안내를 표시합니다. 실제 계정 연결·업로드는 OAuth 클라이언트 준비 후 별도로 확인해야 합니다.
-
-#### 개발자 참고: 비활성화된 Google Drive 연동
-
-Google Drive 업로드 구현(`GoogleDriveUploader`, 관련 토큰 처리와 오프라인 검사)은 코드베이스에 유지되지만 `DriveFeatureGate.Enabled = false`(src/CaptureCanva/Accounts/DriveFeatureGate.cs)로 실행 경로가 차단되어 있어 UI에 노출되지 않습니다. 다시 켜려면 세 가지를 모두 변경해야 합니다: (1) `DriveFeatureGate.Enabled = true`, (2) MainWindow.xaml의 `UploadDriveCheck`를 `Visibility="Visible"`, (3) Accounts/SettingsWindow.xaml의 `DriveSection`을 `Visibility="Visible"`. Drive 업로드를 실제로 사용하려면 Google Cloud에서 Drive API도 활성화해야 합니다.
+**환경설정**에서 입력 상자를 클릭하고 키 조합을 누른 뒤 **단축키 적용**을 선택합니다. **지우기**로 해제한 키는 다음 실행에도 해제 상태를 유지합니다. 등록이나 저장에 실패하면 기존 설정을 유지하고 오류를 표시합니다.
 
 ## 소스에서 빌드
 
@@ -155,8 +138,9 @@ FFmpeg 준비 스크립트는 고정 버전의 다운로드와 SHA-256 검증을
 | [`scripts/Bundle-Ffmpeg.ps1`](scripts/Bundle-Ffmpeg.ps1) | 배포용 FFmpeg 다운로드·검증·패키징 |
 | [`src/CaptureCanva/Recording/GifConverter.cs`](src/CaptureCanva/Recording/GifConverter.cs) | 2단계 GIF 변환과 취소 처리 |
 | [`tests/CaptureCanva.GifChecks/`](tests/CaptureCanva.GifChecks/) | 실제 FFmpeg를 사용하는 GIF 동작 검사 |
-| [`src/CaptureCanva/Accounts/`](src/CaptureCanva/Accounts/) | 계정 연결, 암호화 저장, 업로드와 환경설정 |
-| [`tests/CaptureCanva.UploadChecks/`](tests/CaptureCanva.UploadChecks/) | 외부 계정 없이 업로드·콜백·취소·저장 검사 |
+| [`src/CaptureCanva/Preferences/`](src/CaptureCanva/Preferences/) | 단축키 저장과 환경설정 |
+| [`tests/CaptureCanva.SettingsChecks/`](tests/CaptureCanva.SettingsChecks/) | 저장 경로 복원, 설정 저장 실패, 단축키 보존 검사 |
+| [`tests/CaptureCanva.UIChecks/`](tests/CaptureCanva.UIChecks/) | WPF 화면, 오류 복구와 실제 녹화·GIF 검사 |
 
 C# / WPF / .NET 10을 사용합니다. Windows.Graphics.Capture와 Direct3D 11로 화면을 캡처하고, Vortice로 GPU 처리를 수행하며, NAudio로 오디오를 녹음합니다. GPU 색 변환을 사용할 수 없으면 FFmpeg의 CPU 변환으로 진행합니다.
 
@@ -170,7 +154,7 @@ GitHub Actions는 `main` 브랜치에 대한 push와 pull request에서 Debug·R
 - Debug·Release 빌드 검사
 - FFmpeg 캐시의 SHA-256 검증과 H.264·AAC 인코딩 확인
 - GIF 프리셋, 결과 파일 디코딩, 변환 취소와 MP4 보존 검사
-- Google 외부 접속 없이 업로드·인증 콜백·취소·저장 경로 격리 검사
+- 기본 저장 경로, 설정 저장 실패, 단축키 복원과 WPF 화면 검사
 - 캐시가 없으면 내려받아 저장하고, 있으면 재사용
 
 NuGet 캐시는 .NET SDK 버전과 프로젝트 의존성이 바뀌면 새로 생성됩니다. FFmpeg 캐시는 준비 스크립트가 바뀌면 새로 생성되며, 태그 기반 릴리스에서도 같은 캐시를 사용합니다.
@@ -180,9 +164,24 @@ NuGet 캐시는 .NET SDK 버전과 프로젝트 의존성이 바뀌면 새로 �
 ## 문제 해결
 
 - **`ffmpeg 없음`이 표시될 때**: 릴리스 ZIP을 다시 풀어 `CaptureCanva.exe`와 `ffmpeg.exe`가 같은 폴더에 있는지 확인합니다. 소스 빌드나 v0.1.1 및 이전 버전은 FFmpeg를 별도로 준비해야 합니다.
+- **GIF 생성에 실패할 때**: 저장된 MP4가 재생되는지 확인한 뒤 **GIF 다시 만들기**를 누릅니다. 문제가 계속되면 **로그 열기**에서 변환 오류를 확인합니다.
+- **저장 폴더를 사용할 수 없을 때**: **폴더 변경**에서 쓰기 권한이 있는 폴더를 선택합니다.
 - **특정 창을 녹화할 수 없을 때**: 최소화된 창을 복원하고 목록을 새로고침한 뒤 다시 선택합니다.
 - **영역 선택 후 모니터 구성을 바꿨을 때**: 녹화할 영역을 다시 선택합니다.
 - **녹화 지연이 발생할 때**: 프레임이나 녹화 영역 크기를 줄이고, 앱에 표시된 인코더를 확인합니다.
 - **소리가 녹음되지 않을 때**: 시스템 소리·마이크 옵션과 Windows의 기본 오디오 장치, 마이크 접근 권한을 확인합니다. 오디오 녹음 시작에 실패하면 앱에 경고가 표시됩니다.
 
 설정은 `%APPDATA%\CaptureCanva\settings.json`, 실행 및 예외 로그는 `%APPDATA%\CaptureCanva\logs`에 저장됩니다. 녹화 중에는 저장 폴더에 임시 영상과 오디오 파일을 만들며, 최종 MP4 저장이 성공하면 임시 파일을 삭제합니다.
+
+### 동작 검사
+
+설정과 UI 검사는 임시 폴더에서 실행하며 사용자 설정을 읽거나 변경하지 않습니다.
+
+```powershell
+dotnet build CaptureCanva.slnx -c Release -t:Rebuild -warnaserror
+dotnet run --project tests/CaptureCanva.SettingsChecks -c Release --no-build
+dotnet run --project tests/CaptureCanva.UIChecks -c Release --no-build
+dotnet run --project tests/CaptureCanva.GifChecks -c Release --no-build -- ./publish/ffmpeg.exe
+```
+
+Windows 데스크톱에서 실제 녹화까지 확인하려면 UI 검사에 `-- --native ./publish/ffmpeg.exe`를 추가합니다. 별도의 검증용 창만 녹화하고, MP4·GIF 재생과 실패 후 GIF 재시도를 검사합니다.

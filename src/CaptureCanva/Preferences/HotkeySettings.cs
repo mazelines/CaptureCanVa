@@ -1,6 +1,7 @@
 using System.IO;
+using System.Text.Json.Serialization;
 
-namespace CaptureCanva.Accounts;
+namespace CaptureCanva.Preferences;
 
 /// <summary>Persisted hotkey pair (modifiers + Win32 virtual-key + display name).</summary>
 public sealed record HotkeySetting(uint Modifiers, uint VirtualKey, string Name);
@@ -15,8 +16,10 @@ public sealed class HotkeySettings
     public uint? PauseVirtualKey { get; set; }
     public string? PauseName { get; set; }
 
+    [JsonIgnore]
     public HotkeySetting? Record => RecordVirtualKey is null ? null :
         new HotkeySetting(RecordModifiers ?? 0, RecordVirtualKey.Value, RecordName ?? "단축키");
+    [JsonIgnore]
     public HotkeySetting? Pause => PauseVirtualKey is null ? null :
         new HotkeySetting(PauseModifiers ?? 0, PauseVirtualKey.Value, PauseName ?? "단축키");
 
@@ -52,9 +55,18 @@ public sealed class HotkeySettings
     public static void Save(HotkeySettings settings)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-        string tempPath = FilePath + ".new";
-        File.WriteAllText(tempPath, System.Text.Json.JsonSerializer.Serialize(settings,
-            new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
-        File.Move(tempPath, FilePath, overwrite: true); // atomic, same as the token store
+        string tempPath = FilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(tempPath, System.Text.Json.JsonSerializer.Serialize(settings,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            File.Move(tempPath, FilePath, overwrite: true);
+        }
+        finally
+        {
+            try { File.Delete(tempPath); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
     }
 }

@@ -52,7 +52,7 @@ public sealed class RecordingSession
     public RecordingSession(RecordingOptions options)
     {
         _options = options;
-        _baseName = $"CaptureCanva_{DateTime.Now:yyyyMMdd_HHmmss}";
+        _baseName = $"CaptureCanva_{DateTime.Now:yyyyMMdd_HHmmss_fff}";
     }
 
     private string TempVideoPath => Path.Combine(_options.OutputDirectory, _baseName + ".part.mkv");

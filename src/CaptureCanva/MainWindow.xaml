@@ -11,7 +11,7 @@
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+        <ScrollViewer x:Name="SettingsScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                       PanningMode="VerticalOnly">
             <StackPanel Margin="20,16,20,16">
 
@@ -101,37 +101,14 @@
 
                 <!-- Output -->
                 <TextBlock Style="{StaticResource SectionLabel}" Text="저장 폴더" />
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBox x:Name="OutputDirText" IsReadOnly="True" />
-                    <Button Grid.Column="1" Margin="6,0,0,0" Content="변경" Click="OnChangeOutputDir" />
-                    <Button Grid.Column="2" Margin="6,0,0,0" Content="열기" Click="OnOpenOutputDir" />
-                    <Button Grid.Column="3" Margin="6,0,0,0" Content="환경설정" Click="OnOpenSettings"
-                            ToolTip="YouTube 계정 연동 및 단축키 설정" />
-                </Grid>
-
-                <!-- Upload -->
-                <TextBlock Style="{StaticResource SectionLabel}" Text="업로드 (녹화 완료 후)" />
-                <WrapPanel>
-                    <CheckBox x:Name="UploadYouTubeCheck" Margin="0,0,18,0" Content="YouTube 업로드"
-                              ToolTip="연결된 YouTube 채널에 업로드합니다. 환경설정에서 계정을 연결하세요." />
-                    <!-- Google Drive upload is temporarily hidden (code kept for future re-enable).
-                         Re-enable requires ALL of: (1) Visibility="Visible" here, (2) Visibility=
-                         "Visible" on the DriveSection panel in Accounts/SettingsWindow.xaml,
-                         (3) DriveFeatureGate.Enabled = true in Accounts/DriveFeatureGate.cs. -->
-                    <CheckBox x:Name="UploadDriveCheck" Content="Google Drive 업로드" Visibility="Collapsed"
-                              ToolTip="연결된 Google Drive에 업로드합니다. 환경설정에서 계정을 연결하세요." />
-                </WrapPanel>
-                <WrapPanel x:Name="UploadPrivacyPanel" Margin="0,4,0,0">
-                    <TextBlock VerticalAlignment="Center" Text="YouTube 공개 설정:" />
-                    <RadioButton x:Name="YouTubePrivateRadio" Margin="8,0,0,0" GroupName="YouTubePrivacy"
-                                 Content="비공개" IsChecked="True" />
-                    <RadioButton Margin="8,0,0,0" GroupName="YouTubePrivacy" Content="공개" />
+                <TextBox x:Name="OutputDirText" IsReadOnly="True" TextWrapping="NoWrap"
+                         AutomationProperties.Name="저장 폴더"
+                         ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
+                <WrapPanel x:Name="OutputActionsPanel" Margin="0,6,0,0">
+                    <Button Margin="0,0,6,0" Content="폴더 변경" Click="OnChangeOutputDir" />
+                    <Button Margin="0,0,6,0" Content="폴더 열기" Click="OnOpenOutputDir" />
+                    <Button Margin="0,0,6,0" Content="환경설정" Click="OnOpenSettings" ToolTip="녹화와 일시정지 단축키 설정" />
+                    <Button Content="로그 열기" Click="OnOpenLogs" ToolTip="문제 해결에 필요한 실행 로그 확인" />
                 </WrapPanel>
 
                 <!-- Record -->
@@ -149,17 +126,8 @@
                     <Button x:Name="RecordButton" Grid.Column="2" Style="{StaticResource RecordButton}" Content="● 녹화 시작" IsEnabled="False" Click="OnRecordClick" />
                 </Grid>
 
-                <TextBlock x:Name="HotkeyText" Margin="0,8,0,0" FontSize="12" Opacity="0.6" HorizontalAlignment="Right" />
+                <TextBlock x:Name="HotkeyText" Margin="0,8,0,0" FontSize="12" Opacity="0.6" HorizontalAlignment="Right" TextWrapping="Wrap" />
                 <TextBlock x:Name="StatusText" Margin="0,10,0,0" TextWrapping="Wrap" />
-                <Grid x:Name="UploadCancelPanel" Margin="0,6,0,0" Visibility="Collapsed">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <ProgressBar Height="6" VerticalAlignment="Center" IsIndeterminate="True" />
-                    <Button x:Name="CancelUploadButton" Grid.Column="1" Margin="10,0,0,0"
-                            Content="업로드 취소" Click="OnCancelUpload" />
-                </Grid>
                 <Grid x:Name="GifProgressPanel" Margin="0,6,0,0" Visibility="Collapsed">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -175,13 +143,9 @@
                 <TextBlock x:Name="LastGifFileLink" Margin="0,4,0,0" Visibility="Collapsed" TextWrapping="Wrap">
                     <Hyperlink Click="OnOpenLastGifFile"><Run x:Name="LastGifFileText" /></Hyperlink>
                 </TextBlock>
-                <TextBlock x:Name="UploadLinksText" Margin="0,4,0,0" Visibility="Collapsed" TextWrapping="Wrap">
-                    <Run Text="업로드 결과: " />
-                    <Hyperlink x:Name="UploadLink1" Click="OnOpenUploadLink"><Run x:Name="UploadLink1Text" /></Hyperlink>
-                    <TextBlock x:Name="UploadLink2Panel" Visibility="Collapsed">
-                        <Hyperlink x:Name="UploadLink2" Click="OnOpenUploadLink"><Run x:Name="UploadLink2Text" /></Hyperlink>
-                    </TextBlock>
-                </TextBlock>
+                <Button x:Name="RetryGifButton" Margin="0,8,0,0" HorizontalAlignment="Left"
+                        Content="GIF 다시 만들기" Click="OnRetryGif" Visibility="Collapsed"
+                        ToolTip="저장된 MP4로 선택한 프리셋의 GIF를 다시 만듭니다" />
             </StackPanel>
         </ScrollViewer>
 

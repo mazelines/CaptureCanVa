@@ -6,7 +6,8 @@ namespace CaptureCanva;
 
 public partial class App : Application
 {
-    public static string LogDirectory { get; } = Path.Combine(
+    internal static string? LogDirectoryOverride { get; set; }
+    public static string LogDirectory => LogDirectoryOverride ?? Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CaptureCanva", "logs");
 
     protected override void OnStartup(StartupEventArgs e)

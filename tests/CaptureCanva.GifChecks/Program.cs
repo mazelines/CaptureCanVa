@@ -51,6 +51,22 @@ byte[] smallBytes = await File.ReadAllBytesAsync(smallGif);
 Require(BinaryPrimitives.ReadUInt16LittleEndian(smallBytes.AsSpan(6, 2)) == 128, "Small recordings must not be enlarged.");
 Console.WriteLine("PASS small recording: no upscaling");
 
+// At 60 fps this clip lasts 1/60 s. Default fps-filter EOF rounding used to drop
+// its only frame: FFmpeg exited 0 but no palette existed, so the second pass failed.
+string oneFrameVideo = Path.Combine(directory, "one frame at 60 fps.mp4");
+await RunFfmpegAsync(["-f", "lavfi", "-i", "testsrc2=s=128x72:r=60", "-frames:v", "1", "-c:v", "libx264", oneFrameVideo]);
+byte[] oneFrameHash = SHA256.HashData(await File.ReadAllBytesAsync(oneFrameVideo));
+foreach (var preset in Enum.GetValues<GifPreset>())
+{
+    string gif = await GifConverter.ConvertAsync(ffmpeg, oneFrameVideo, preset);
+    string decoded = await RunFfmpegAsync(["-ignore_loop", "1", "-i", gif, "-fps_mode", "passthrough", "-progress", "pipe:1", "-f", "null", "NUL"]);
+    var frames = Regex.Matches(decoded, @"(?m)^frame=(\d+)\r?$");
+    Require(frames.Count > 0 && int.Parse(frames[^1].Groups[1].Value) == 1, "Very short recordings must preserve their only frame: " + preset);
+    Require(oneFrameHash.AsEnumerable().SequenceEqual(SHA256.HashData(await File.ReadAllBytesAsync(oneFrameVideo))), "Short MP4 must remain unchanged.");
+    RequireNoTemporaryFiles();
+    Console.WriteLine("PASS one-frame 60 fps recording: " + preset);
+}
+
 string existingVideo = Path.Combine(directory, "recording Standard.mp4");
 string existingGif = Path.ChangeExtension(existingVideo, ".gif");
 byte[] originalGif = await File.ReadAllBytesAsync(existingGif);

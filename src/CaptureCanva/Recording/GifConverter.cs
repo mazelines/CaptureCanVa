@@ -30,7 +30,9 @@ internal static class GifConverter
             _ => (480, 12, "bayer:bayer_scale=5"),
         };
         // Preserve aspect ratio and avoid enlarging small recordings.
-        string videoFilter = $"fps={fps}" + (width > 0 ? $",scale=w='min(iw,{width})':h=-1:flags=lanczos" : "");
+        // A one-frame recording can be shorter than half a GIF frame. The default EOF
+        // rounding drops that frame and palettegen exits successfully without a palette.
+        string videoFilter = $"fps={fps}:eof_action=pass" + (width > 0 ? $",scale=w='min(iw,{width})':h=-1:flags=lanczos" : "");
 
         try
         {
@@ -38,6 +40,9 @@ internal static class GifConverter
             await RunAsync(ffmpegPath,
                 ["-i", videoPath, "-an", "-vf", videoFilter + ",palettegen=stats_mode=diff",
                     "-frames:v", "1", "-update", "1", palettePath], cancellationToken);
+
+            if (!File.Exists(palettePath) || new FileInfo(palettePath).Length == 0)
+                throw new InvalidOperationException("영상에서 GIF 색상을 분석하지 못했습니다. MP4가 정상적으로 재생되는지 확인해 주세요.");
 
             progress?.Report("GIF 변환 중 (2/2)…");
             await RunAsync(ffmpegPath,
