@@ -59,6 +59,7 @@ public partial class MainWindow : Window
 
         if (!ScreenCapturer.IsSupported)
         {
+            RecordingStateText.Text = "화면 캡처 확인 필요";
             StatusText.Text = "이 Windows 버전은 화면 캡처 API(Windows.Graphics.Capture)를 지원하지 않습니다.";
             return;
         }
@@ -66,6 +67,7 @@ public partial class MainWindow : Window
         _ffmpegPath = Ffmpeg.FindExecutable();
         if (_ffmpegPath == null)
         {
+            RecordingStateText.Text = "FFmpeg 확인 필요";
             EncoderText.Text = "ffmpeg 없음";
             StatusText.Text = "ffmpeg.exe를 찾을 수 없습니다. CaptureCanva.exe와 같은 폴더에 두거나 PATH에 추가한 뒤 다시 실행하세요.";
             return;
@@ -78,6 +80,7 @@ public partial class MainWindow : Window
             if (!_closeAfterStop)
             {
                 RecordButton.IsEnabled = true;
+                RecordingStateText.Text = "녹화 준비 완료";
                 StatusText.Text = "녹화할 대상을 선택한 뒤 녹화를 시작하세요.";
             }
         }
@@ -85,6 +88,7 @@ public partial class MainWindow : Window
         {
             App.Log("FFmpeg initialization failed", ex);
             EncoderText.Text = "확인 실패";
+            RecordingStateText.Text = "인코더 확인 필요";
             StatusText.Text = "인코더를 준비하지 못했습니다. 릴리스 ZIP을 다시 풀어 실행해 주세요.";
             _ffmpegPath = null;
         }
@@ -478,6 +482,7 @@ public partial class MainWindow : Window
         else
             _session.Pause();
         PauseButton.Content = _session.IsPaused ? "계속" : "일시정지";
+        PauseButton.Tag = FindResource(_session.IsPaused ? "PlayIcon" : "PauseIcon");
         UpdateTimer();
     }
 
@@ -510,10 +515,13 @@ public partial class MainWindow : Window
 
     private void SetRecordingUi(bool recording)
     {
-        RecordButton.Content = recording ? "■ 녹화 중지" : "● 녹화 시작";
+        RecordButton.Content = recording ? "녹화 중지" : "녹화 시작";
+        RecordButton.Tag = recording ? "Recording" : null;
+        RecordingStateText.Text = recording ? "녹화 중" : _busy ? "처리 중" : _ffmpegPath == null ? "준비 중" : "녹화 준비 완료";
         PauseButton.IsEnabled = recording && !_busy;
         RecordButton.IsEnabled = !_busy && _ffmpegPath != null;
         PauseButton.Content = "일시정지";
+        PauseButton.Tag = FindResource("PauseIcon");
         bool editable = !recording && !_busy;
         ModeMonitor.IsEnabled = ModeWindow.IsEnabled = ModeRegion.IsEnabled = editable;
         MonitorList.IsEnabled = WindowPanel.IsEnabled = RegionPanel.IsEnabled = editable;
@@ -540,6 +548,7 @@ public partial class MainWindow : Window
         TimerText.Text = elapsed.ToString(@"hh\:mm\:ss");
         if (_session == null)
             return;
+        RecordingStateText.Text = _session.IsPaused ? "일시정지" : "녹화 중";
         // Solid while paused, blinking while recording.
         RecDot.Opacity = _session.IsPaused ? 0.6 : (DateTime.Now.Millisecond < 500 ? 1 : 0.25);
 
@@ -552,6 +561,10 @@ public partial class MainWindow : Window
     }
 
     // ───────────────────────── preferences ─────────────────────────
+
+    private void OnMinimizeWindow(object sender, RoutedEventArgs e) => SystemCommands.MinimizeWindow(this);
+
+    private void OnCloseWindow(object sender, RoutedEventArgs e) => Close();
 
     private void OnOpenSettings(object sender, RoutedEventArgs e)
     {

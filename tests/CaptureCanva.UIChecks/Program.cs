@@ -94,7 +94,7 @@ internal static class Program
             Control<TextBox>(main, "OutputDirText").Text = directory;
             Call(main, "SaveSettingsFromControls");
             main.SizeToContent = SizeToContent.Manual;
-            main.Height = 750;
+            main.Height = 900;
             main.Show();
             main.UpdateLayout();
             Snapshot(main, Path.Combine(directory, "main-normal.png"));
@@ -105,6 +105,12 @@ internal static class Program
             var banner = Control<Button>(main, "MazelineBanner");
             var point = banner.TranslatePoint(new Point(), (UIElement)main.Content);
             Check(point.Y >= 0 && point.Y + banner.ActualHeight <= ((FrameworkElement)main.Content).ActualHeight + 1, "banner stays fully visible on a small window");
+            var dock = Control<Border>(main, "RecordingDock");
+            var recordButton = Control<Button>(main, "RecordButton");
+            var actionPoint = recordButton.TranslatePoint(new Point(), (UIElement)main.Content);
+            Check(actionPoint.Y >= 0 && actionPoint.Y + recordButton.ActualHeight <= ((FrameworkElement)main.Content).ActualHeight,
+                "record button remains visible without scrolling on a small window");
+            Check(!IsDescendant(recordButton, scroll) && IsDescendant(recordButton, dock), "recording actions stay outside the settings scroll area");
             scroll.ScrollToBottom();
             main.UpdateLayout();
             Snapshot(main, Path.Combine(directory, "main-small.png"));
@@ -117,7 +123,8 @@ internal static class Program
             Console.WriteLine($"All {_passed} UI checks passed. Artifacts: {directory}");
             if (args.Length == 1 && args[0] == "--preview")
             {
-                main.Height = 750;
+                main.Height = 900;
+                Control<CheckBox>(main, "HideSelfCheck").IsChecked = false;
                 scroll.ScrollToTop();
                 main.Closed += (_, _) => app.Shutdown();
                 app.Run(main);
@@ -169,7 +176,7 @@ internal static class Program
             decoded = await Ffmpeg.RunAsync(ffmpeg, $"-hide_banner -loglevel error -ignore_loop 1 -i {Ffmpeg.Quote(gif)} -f null NUL", TimeSpan.FromSeconds(20));
             Check(decoded.ExitCode == 0, "native GIF decodes without errors");
             Check(Directory.GetFiles(directory, "*.part.mkv").Length == 0 && Directory.GetFiles(directory, ".gif-*").Length == 0, "native recording cleans temporary files");
-            main.Height = 750;
+            main.Height = 900;
             Control<ScrollViewer>(main, "SettingsScrollViewer").ScrollToBottom();
             main.UpdateLayout();
             Snapshot(main, Path.Combine(directory, "recording-completed.png"));
@@ -197,6 +204,12 @@ internal static class Program
     private static object? Call(object target, string name, params object?[] args) => Dispatcher.CurrentDispatcher.Invoke(() => target.GetType().GetMethod(name, Private)!.Invoke(target, args));
     private static void Set(object target, string name, object? value) => target.GetType().GetField(name, Private)!.SetValue(target, value);
     private static T Control<T>(Window window, string name) => (T)window.FindName(name);
+    private static bool IsDescendant(DependencyObject child, DependencyObject parent)
+    {
+        for (DependencyObject? current = child; current != null; current = VisualTreeHelper.GetParent(current))
+            if (ReferenceEquals(current, parent)) return true;
+        return false;
+    }
     private static void Check(bool condition, string message)
     {
         if (!condition) throw new InvalidOperationException(message);
@@ -209,7 +222,7 @@ internal static class Program
         var bitmap = new RenderTargetBitmap((int)Math.Ceiling(content.ActualWidth), (int)Math.Ceiling(content.ActualHeight), 96, 96, PixelFormats.Pbgra32);
         var background = new DrawingVisual();
         using (var drawing = background.RenderOpen())
-            drawing.DrawRectangle(SystemColors.WindowBrush, null, new Rect(0, 0, bitmap.Width, bitmap.Height));
+            drawing.DrawRectangle(window.Background ?? SystemColors.WindowBrush, null, new Rect(0, 0, bitmap.Width, bitmap.Height));
         bitmap.Render(background);
         bitmap.Render(content);
         var encoder = new PngBitmapEncoder();
